@@ -1,0 +1,6 @@
+{
+  "name": "Prueba Técnica 3D · Tercera Persona",
+  "description": "Controlador de personaje en tercera persona con Three.js, Soldier.glb, AnimationMixer, físicas Cannon-es y controles PC/móvil.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
