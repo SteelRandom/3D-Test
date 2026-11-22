@@ -1,0 +1,544 @@
+# 3ds Max Wavefront OBJ Exporter v0.97b - (c)2007 guruware
+# File Created: 29.06.2017 18:39:51
+
+newmtl 0Ingranaggio
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.207843 0.258824 0.011765
+	Kd 0.207843 0.258824 0.011765
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Ingranaggio [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Ingranaggio [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Ingranaggio [Specular].png
+	map_bump Map__124_Normal_Bump.tga
+
+newmtl 0FregioCromato
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.207843 0.258824 0.011765
+	Kd 0.207843 0.258824 0.011765
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\FregioCromato [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\FregioCromato [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\FregioCromato [Specular].png
+	map_bump Map__114_Normal_Bump.tga
+
+newmtl engine
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.588235 0.588235 0.588235
+	Kd 0.588235 0.588235 0.588235
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\EngineLP [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\EngineLP [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\EngineLP [Specular].png
+	map_bump Map__104_Normal_Bump.tga
+
+newmtl PlasticaGrigia
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.011765 0.258824 0.121569
+	Kd 0.011765 0.258824 0.121569
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlaGrigia [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlaGrigia [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlaGrigia [Specular].png
+	map_bump Map__135_Normal_Bump.tga
+
+newmtl CarterHonda
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.047059 0.066667 0.078431
+	Kd 0.047059 0.066667 0.078431
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CarterHonda [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CarterHonda [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CarterHonda [Specular].png
+	map_bump Map__94_Normal_Bump.tga
+
+newmtl catena
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.109804 0.039216
+	Kd 0.262745 0.109804 0.039216
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\catena [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\catena [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\catena [Specular].png
+	map_bump Map__19_Normal_Bump.tga
+
+newmtl Manubrio
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Manubrio [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Manubrio [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Manubrio [Specular].png
+	map_bump Map__58_Normal_Bump.tga
+
+newmtl frame
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.027451 0.027451 0.027451
+	Kd 0.027451 0.027451 0.027451
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\frame [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\frame [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\frame [Specular].png
+	map_bump Map__48_Normal_Bump.tga
+
+newmtl Fanale
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.172549 0.258824 0.309804
+	Kd 0.172549 0.258824 0.309804
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Fanale [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Fanale [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Fanale [Specular].png
+	map_bump Map__109_Normal_Bump.tga
+
+newmtl 11___Default
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.588235 0.588235 0.588235
+	Kd 0.588235 0.588235 0.588235
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\sellaLPExport [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\sellaLPExport [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\sellaLPExport [Specular].png
+	map_bump Map__166_Normal_Bump.tga
+
+newmtl VerniceNera
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.047059 0.066667 0.078431
+	Kd 0.047059 0.066667 0.078431
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\VerniceNera [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\VerniceNera [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\VerniceNera [Specular].png
+	map_bump Map__84_Normal_Bump.tga
+
+newmtl 0CarrozzeriaLP
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.207843 0.258824 0.011765
+	Kd 0.207843 0.258824 0.011765
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Carrozzeria [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Carrozzeria [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Carrozzeria [Specular].png
+	map_bump Map__161_Normal_Bump.tga
+
+newmtl Specchio
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.011765 0.258824 0.121569
+	Kd 0.011765 0.258824 0.121569
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Specchio [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Specchio [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Specchio [Specular].png
+
+newmtl PlasticaNera
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.105882 0.105882 0.105882
+	Kd 0.105882 0.105882 0.105882
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\_Plastica_nera_Opaca [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\_Plastica_nera_Opaca [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\_Plastica_nera_Opaca [Specular].png
+	map_bump Map__8_Normal_Bump.tga
+
+newmtl 0minuteria
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.207843 0.258824 0.011765
+	Kd 0.207843 0.258824 0.011765
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Minuteria [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Minuteria [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Minuteria [Specular].png
+	map_bump Map__130_Normal_Bump.tga
+
+newmtl raggi
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Raggi_Anteriori [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Raggi_Anteriori [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Raggi_Anteriori [Specular].png
+	map_bump C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Raggi_Anteriori [Normal].png
+	bump C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Raggi_Anteriori [Normal].png
+
+newmtl Frecce
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 1.000000 0.352941 0.000000
+	Kd 1.000000 0.352941 0.000000
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Freccie [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Freccie [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Freccie [Specular].png
+	map_bump Map__53_Normal_Bump.tga
+
+newmtl steel
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.062745 0.074510 0.105882
+	Kd 0.062745 0.074510 0.105882
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Steel [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Steel [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Steel [Specular].png
+	map_bump -bm 0.300000 Map__74_Normal_Bump.tga
+
+newmtl Tachimetri
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.588235 0.588235 0.588235
+	Kd 0.588235 0.588235 0.588235
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Tachimetri_Diffuse.jpg
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Tachimetri_Diffuse.jpg
+
+newmtl terminali
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.054902 0.121569 0.000000
+	Kd 0.054902 0.121569 0.000000
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\terminali [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\terminali [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\terminali [Specular].png
+	map_bump Map__147_Normal_Bump.tga
+
+newmtl CromMed
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromMed [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromMed [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromMed [Specular].png
+	map_bump Map__38_Normal_Bump.tga
+
+newmtl PlasticaBianca
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.737255 0.737255 0.737255
+	Kd 0.737255 0.737255 0.737255
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlasticaBianca [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlasticaBianca [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\PlasticaBianca [Specular].png
+	map_bump Map__68_Normal_Bump.tga
+
+newmtl CarterTestata
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.047059 0.066667 0.078431
+	Kd 0.047059 0.066667 0.078431
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\cover_Testata [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\cover_Testata [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\cover_Testata [Specular].png
+	map_bump Map__99_Normal_Bump.tga
+
+newmtl Gomma
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.011765 0.258824 0.121569
+	Kd 0.011765 0.258824 0.121569
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Gomma [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Gomma [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Gomma [Specular].png
+	map_bump Map__119_Normal_Bump.tga
+
+newmtl Pedale
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pedale_Zigrinato [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pedale_Zigrinato [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pedale_Zigrinato [Specular].png
+	map_bump Map__63_Normal_Bump.tga
+
+newmtl tela
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.164706 0.101961 0.000000
+	Kd 0.164706 0.101961 0.000000
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\TubiTelati [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\TubiTelati [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\TubiTelati [Specular].png
+	map_bump Map__152_Normal_Bump.tga
+
+newmtl aria
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.062745 0.074510 0.105882
+	Kd 0.062745 0.074510 0.105882
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Aria [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Aria [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Aria [Specular].png
+	map_bump Map__14_Normal_Bump.tga
+
+newmtl Cerchi
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cerchi [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cerchi [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cerchi [Specular].png
+	map_bump Map__24_Normal_Bump.tga
+
+newmtl CromeVarie
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.262745 0.368627 0.435294
+	Kd 0.262745 0.368627 0.435294
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromeVarieHP [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromeVarieHP [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\CromeVarieHP [Specular].png
+	map_bump Map__29_Normal_Bump.tga
+
+newmtl stop
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.431373 0.019608 0.019608
+	Kd 0.431373 0.019608 0.019608
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\stop [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\stop [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\stop [Specular].png
+	map_bump Map__79_Normal_Bump.tga
+
+newmtl VetroClear
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.011765 0.000000 0.121569
+	Kd 0.011765 0.000000 0.121569
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Vetri [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Vetri [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Vetri [Specular].png
+	map_d C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Vetri [Opacity].png
+
+newmtl cruscotto
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.243137 0.011765 0.258824
+	Kd 0.243137 0.011765 0.258824
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cruscotto [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cruscotto [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Cruscotto [Specular].png
+	map_bump Map__43_Normal_Bump.tga
+
+newmtl 0Pneumatici
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.054902 0.003922 0.078431
+	Kd 0.054902 0.003922 0.078431
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pneumatici [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pneumatici [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\Pneumatici [Specular].png
+	map_bump Map__139_Normal_Bump.tga
+
+newmtl 0BulloniBig
+	Ns 9.999999
+	Ni 1.500000
+	d 1.000000
+	Tr 0.000000
+	Tf 1.000000 1.000000 1.000000 
+	illum 2
+	Ka 0.243137 0.011765 0.258824
+	Kd 0.243137 0.011765 0.258824
+	Ks 0.000000 0.000000 0.000000
+	Ke 0.000000 0.000000 0.000000
+	map_Ka C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\BulloniBig [Albedo].png
+	map_Kd C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\BulloniBig [Albedo].png
+	map_Ks C:\Users\Maurizio\Documents\turbosquid\Honda_CB_750_Four\sceneassets\images\BulloniBig [Specular].png
+	map_bump Map__89_Normal_Bump.tga
