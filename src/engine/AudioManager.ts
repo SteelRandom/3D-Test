@@ -19,6 +19,10 @@ export class AudioManager {
   private engineSubOsc: OscillatorNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
   private engineGain: GainNode | null = null;
+  private noiseSource: AudioBufferSourceNode | null = null;
+  private noiseFilter: BiquadFilterNode | null = null;
+  private noiseGain: GainNode | null = null;
+  private simulatedRpm = 1100;
   private engineActive = false;
 
   private ensureContext(): AudioContext | null {
@@ -31,7 +35,7 @@ export class AudioManager {
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.75;
+      this.masterGain.gain.value = 0.78;
       this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
@@ -50,22 +54,22 @@ export class AudioManager {
 
     this.engineFilter = ctx.createBiquadFilter();
     this.engineFilter.type = 'lowpass';
-    this.engineFilter.frequency.value = 210;
-    this.engineFilter.Q.value = 2.4;
+    this.engineFilter.frequency.value = 180;
+    this.engineFilter.Q.value = 2.6;
 
     this.engineGain = ctx.createGain();
     this.engineGain.gain.value = 0.0001;
 
     this.engineMainOsc = ctx.createOscillator();
     this.engineMainOsc.type = 'sawtooth';
-    this.engineMainOsc.frequency.value = 46;
+    this.engineMainOsc.frequency.value = 44;
 
     this.engineSubOsc = ctx.createOscillator();
     this.engineSubOsc.type = 'triangle';
-    this.engineSubOsc.frequency.value = 23;
+    this.engineSubOsc.frequency.value = 22;
 
     const subGain = ctx.createGain();
-    subGain.gain.value = 0.65;
+    subGain.gain.value = 0.45;
 
     this.engineMainOsc.connect(this.engineFilter);
     this.engineSubOsc.connect(subGain);
@@ -73,8 +77,33 @@ export class AudioManager {
     this.engineFilter.connect(this.engineGain);
     this.engineGain.connect(this.masterGain);
 
+    // Capa de ruido blanco para fricción mecánica y rodadura de neumáticos
+    const noiseLen = Math.floor(ctx.sampleRate * 2);
+    const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const channelData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) {
+      channelData[i] = Math.random() * 2 - 1;
+    }
+
+    this.noiseSource = ctx.createBufferSource();
+    this.noiseSource.buffer = noiseBuffer;
+    this.noiseSource.loop = true;
+
+    this.noiseFilter = ctx.createBiquadFilter();
+    this.noiseFilter.type = 'bandpass';
+    this.noiseFilter.frequency.value = 720;
+    this.noiseFilter.Q.value = 0.9;
+
+    this.noiseGain = ctx.createGain();
+    this.noiseGain.gain.value = 0.0001;
+
+    this.noiseSource.connect(this.noiseFilter);
+    this.noiseFilter.connect(this.noiseGain);
+    this.noiseGain.connect(this.masterGain);
+
     this.engineMainOsc.start();
     this.engineSubOsc.start();
+    this.noiseSource.start();
     this.engineActive = true;
   }
 
@@ -82,12 +111,14 @@ export class AudioManager {
     speedRatio: number,
     isMounted: boolean,
     isPaused: boolean,
-    timeScale = 1.0
+    timeScale = 1.0,
+    throttle = 0
   ): void {
     if (this.muted || !isMounted || isPaused) {
-      if (this.ctx && this.engineGain) {
+      if (this.ctx) {
         const now = this.ctx.currentTime;
-        this.engineGain.gain.setTargetAtTime(0.0001, now, 0.06);
+        this.engineGain?.gain.setTargetAtTime(0.0001, now, 0.06);
+        this.noiseGain?.gain.setTargetAtTime(0.0001, now, 0.06);
       }
       return;
     }
@@ -100,24 +131,39 @@ export class AudioManager {
       !this.engineMainOsc ||
       !this.engineSubOsc ||
       !this.engineFilter ||
-      !this.engineGain
+      !this.engineGain ||
+      !this.noiseFilter ||
+      !this.noiseGain
     ) {
       return;
     }
 
-    const clamped = Math.max(0, Math.min(1, speedRatio));
+    const clampedSpeed = Math.max(0, Math.min(1, speedRatio));
+    const throttleRev = Math.max(0, throttle) * 1450;
+    const targetRpm = Math.min(8800, 1100 + clampedSpeed * 6250 + throttleRev);
+    this.simulatedRpm += (targetRpm - this.simulatedRpm) * 0.14;
+
+    const rpmNorm = Math.max(0, Math.min(1, (this.simulatedRpm - 1000) / 7800));
     const now = this.ctx.currentTime;
     const scalePitch = timeScale < 0.9 ? 0.65 : 1.0;
 
-    const mainFreq = (46 + clamped * 108) * scalePitch;
+    // Oscilador de onda sierra y filtro pasa-bajos controlado por RPM simuladas
+    const mainFreq = (42 + rpmNorm * 148) * scalePitch;
     const subFreq = mainFreq * 0.5;
-    const cutoff = (210 + clamped * 980) * scalePitch;
-    const gainVal = 0.055 + clamped * 0.11;
+    const cutoff = (180 + Math.pow(rpmNorm, 1.15) * 2250) * scalePitch;
+    const engineVol = 0.05 + rpmNorm * 0.11;
 
-    this.engineMainOsc.frequency.setTargetAtTime(mainFreq, now, 0.05);
-    this.engineSubOsc.frequency.setTargetAtTime(subFreq, now, 0.05);
-    this.engineFilter.frequency.setTargetAtTime(cutoff, now, 0.06);
-    this.engineGain.gain.setTargetAtTime(gainVal, now, 0.06);
+    // Fricción de rodadura y aire proporcional a la velocidad
+    const frictionNoiseVol = 0.003 + clampedSpeed * 0.032;
+    const frictionCenterFreq = (480 + clampedSpeed * 1350) * scalePitch;
+
+    this.engineMainOsc.frequency.setTargetAtTime(mainFreq, now, 0.045);
+    this.engineSubOsc.frequency.setTargetAtTime(subFreq, now, 0.045);
+    this.engineFilter.frequency.setTargetAtTime(cutoff, now, 0.05);
+    this.engineGain.gain.setTargetAtTime(engineVol, now, 0.06);
+
+    this.noiseFilter.frequency.setTargetAtTime(frictionCenterFreq, now, 0.06);
+    this.noiseGain.gain.setTargetAtTime(frictionNoiseVol, now, 0.06);
   }
 
   public playSound(soundId: string, options?: SoundPlayOptions): void {
@@ -206,24 +252,20 @@ export class AudioManager {
   }
 
   public dispose(): void {
-    if (this.engineMainOsc) {
-      try {
-        this.engineMainOsc.stop();
-      } catch {
-        // noop
+    for (const node of [this.engineMainOsc, this.engineSubOsc, this.noiseSource]) {
+      if (node) {
+        try {
+          node.stop();
+        } catch {
+          // noop
+        }
+        node.disconnect();
       }
-      this.engineMainOsc.disconnect();
-    }
-    if (this.engineSubOsc) {
-      try {
-        this.engineSubOsc.stop();
-      } catch {
-        // noop
-      }
-      this.engineSubOsc.disconnect();
     }
     this.engineFilter?.disconnect();
     this.engineGain?.disconnect();
+    this.noiseFilter?.disconnect();
+    this.noiseGain?.disconnect();
     this.masterGain?.disconnect();
     if (this.ctx) {
       void this.ctx.close().catch(() => {});

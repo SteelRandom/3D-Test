@@ -29,9 +29,27 @@ export default defineConfig(() => {
       },
     ],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'lucide-react',
+        'three',
+        'three/addons/loaders/GLTFLoader.js',
+        'three/addons/loaders/OBJLoader.js',
+        'three/addons/loaders/MTLLoader.js',
+        'three/addons/environments/RoomEnvironment.js',
+        'three/addons/utils/BufferGeometryUtils.js',
+        'cannon-es',
+      ],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

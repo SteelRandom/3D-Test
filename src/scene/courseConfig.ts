@@ -1,8 +1,13 @@
 export const SOLDIER_MODEL_URL =
   'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
 
-export const MOTORCYCLE_MODEL_URL =
-  'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Motorcycle.glb';
+export const HONDA_OBJ_URL =
+  'https://raw.githubusercontent.com/SteelRandom/3D-Test/refs/heads/main/honda_cb_750_four_TS_00.obj';
+
+export const HONDA_MTL_URL =
+  'https://raw.githubusercontent.com/SteelRandom/3D-Test/refs/heads/main/honda_cb_750_four_TS_00.mtl';
+
+export const MOTORCYCLE_MODEL_URL = HONDA_OBJ_URL;
 
 export const SCENE_COLORS = {
   skyHex: 0xcfd9e6,
@@ -36,18 +41,23 @@ export const PHYSICS_CONFIG = {
 } as const;
 
 export const VEHICLE_CONFIG = {
-  spawnPosition: [-3.4, 0.55, 2.2] as const,
+  spawnPosition: [-3.4, 0.52, 2.2] as const,
   spawnYaw: 0.35,
-  mass: 165,
-  boxSize: [0.74, 0.94, 2.12] as const,
-  maxForwardSpeed: 17.5,
-  maxReverseSpeed: 5.5,
-  accel: 13.5,
-  brakeDecel: 22.0,
-  rollingDamping: 2.4,
-  steerSpeed: 2.35,
+  mass: 210,
+  boxSize: [0.76, 1.04, 2.0] as const,
+  maxForwardSpeed: 24.0,
+  maxReverseSpeed: 4.5,
+  accel: 9.2,
+  brakeDecel: 11.5,
+  rollingDamping: 0.36,
+  aeroDrag: 0.012,
+  steerSpeed: 2.25,
   wheelRadius: 0.31,
   interactDistance: 4.2,
+  wheelieMinSpeed: 2.8,
+  wheelieSafeDeg: 40,
+  wheelieCriticalDeg: 51,
+  crashDeltaSpeed: 11.0,
 } as const;
 
 export const DOOR_CONFIG = {

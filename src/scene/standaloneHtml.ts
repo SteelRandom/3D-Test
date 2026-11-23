@@ -1,7 +1,8 @@
 import {
   CAMERA_VIEWS,
   DOOR_CONFIG,
-  MOTORCYCLE_MODEL_URL,
+  HONDA_MTL_URL,
+  HONDA_OBJ_URL,
   PHYSICS_CONFIG,
   SCENE_COLORS,
   SOLDIER_MODEL_URL,
@@ -51,70 +52,220 @@ export function generateStandaloneHtml(): string {
       position: fixed;
       left: 50%;
       top: 50%;
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       transform: translate(-50%, -50%);
       border-radius: 50%;
-      border: 1.5px solid rgba(15, 23, 42, 0.55);
+      border: 1.5px solid rgba(15, 23, 42, 0.45);
       background: rgba(255, 255, 255, 0.75);
       pointer-events: none;
       z-index: 12;
     }
 
     #crosshair.active {
-      width: 11px;
-      height: 11px;
+      width: 10px;
+      height: 10px;
       border-color: #d97706;
       background: #fbbf24;
     }
 
-    #hud-top {
+    #hud-minimal {
       position: fixed;
       top: 16px;
       left: 16px;
-      z-index: 10;
+      z-index: 15;
       pointer-events: none;
-      color: #0f172a;
-      background: rgba(255, 255, 255, 0.86);
-      border: 1px solid rgba(15, 23, 42, 0.12);
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-size: 13px;
-      line-height: 1.45;
-      max-width: min(680px, calc(100vw - 32px));
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
     }
 
-    #hud-top strong {
-      display: block;
-      font-size: 14px;
+    #speed-card {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      background: rgba(2, 6, 23, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: #ffffff;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+    }
+
+    #speed-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    #speed-unit {
+      font-size: 11px;
       font-weight: 600;
-      margin-bottom: 2px;
-    }
-
-    #hud-top .meta {
-      color: #334155;
-      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #cbd5e1;
     }
 
     #interact-prompt {
       position: fixed;
+      top: 16px;
       left: 50%;
-      bottom: 84px;
       transform: translateX(-50%);
       z-index: 15;
       pointer-events: none;
-      padding: 9px 16px;
-      border-radius: 10px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      color: #ffffff;
-      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: rgba(2, 6, 23, 0.9);
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      color: #fcd34d;
+      font-size: 12px;
       font-weight: 600;
+      letter-spacing: 0.03em;
       display: none;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
     }
 
     #interact-prompt.visible {
       display: block;
+    }
+
+    #debug-dock {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    #debug-toggle {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(2, 6, 23, 0.9);
+      color: #f1f5f9;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+    }
+
+    #debug-panel {
+      display: none;
+      width: 276px;
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(2, 6, 23, 0.92);
+      color: #f1f5f9;
+      font-size: 12px;
+      line-height: 1.5;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.35);
+    }
+
+    #debug-panel.open {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #state-readout {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: #cbd5e1;
+      white-space: pre-line;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding-bottom: 8px;
+    }
+
+    #honda-parts-box {
+      display: none;
+      max-height: 112px;
+      overflow-y: auto;
+      padding: 6px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.78);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #cbd5e1;
+      white-space: pre;
+    }
+
+    #honda-parts-box.visible {
+      display: block;
+    }
+
+    .debug-hint {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .debug-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .debug-btn {
+      cursor: pointer;
+      border: 0;
+      border-radius: 7px;
+      padding: 6px 8px;
+      background: #1e293b;
+      color: #f1f5f9;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .debug-btn:hover {
+      background: #334155;
+    }
+
+    .debug-btn.active {
+      background: #0891b2;
+      color: #ffffff;
+    }
+
+    .debug-btn.primary {
+      background: #0284c7;
+      color: #ffffff;
+    }
+
+    .debug-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #test-model-url {
+      width: 100%;
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: #0f172a;
+      color: #f1f5f9;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     #loading-overlay {
@@ -296,13 +447,45 @@ export function generateStandaloneHtml(): string {
   <div id="canvas-container"></div>
   <div id="crosshair" aria-hidden="true"></div>
 
-  <div id="hud-top">
-    <strong>Núcleo Engine 3D · Personaje + Moto + FPS</strong>
-    <div class="meta" id="pc-hint">WASD mover/conducir · Shift correr · Espacio saltar · E puerta/moto · F saludar · V vista · F2 FPS/TPS · P pausa · L lenta</div>
-    <div class="meta" id="state-readout">Estado: Idle · HP: 100 · Vista: Estándar · Tiempo: 1x</div>
+  <div id="hud-minimal">
+    <div id="speed-card">
+      <span id="speed-value">0</span>
+      <span id="speed-unit">km/h</span>
+    </div>
   </div>
+  <div id="interact-prompt">Presiona E</div>
 
-  <div id="interact-prompt">Presiona E para interactuar</div>
+  <aside id="debug-dock">
+    <button id="debug-toggle" type="button" aria-expanded="false">DEBUG</button>
+    <div id="debug-panel">
+      <div id="state-readout">Animación: Idle
+Suelo: En suelo
+HP: 100
+Vista: Estándar
+Tiempo: 1x</div>
+      <div id="honda-parts-box"></div>
+      <div class="debug-grid">
+        <button id="btn-freecam" class="debug-btn" type="button">Free-Cam (C)</button>
+        <button id="btn-save" class="debug-btn" type="button">Guardar (G)</button>
+        <button id="btn-load" class="debug-btn" type="button">Cargar (K)</button>
+        <button id="btn-pause" class="debug-btn" type="button">Pausa (P)</button>
+      </div>
+      <div class="debug-section-title">
+        <span>Modelos prueba (URL)</span>
+        <span id="test-model-status" style="color:#7dd3fc;text-transform:none;font-weight:500;"></span>
+      </div>
+      <div class="debug-grid">
+        <button id="btn-preset-box" class="debug-btn" type="button">BoxAnimated</button>
+        <button id="btn-preset-helmet" class="debug-btn" type="button">DamagedHelmet</button>
+      </div>
+      <input id="test-model-url" type="url" value="https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoxAnimated/glTF-Binary/BoxAnimated.glb" placeholder="https://.../modelo.glb o .obj" />
+      <div class="debug-grid">
+        <button id="btn-load-model" class="debug-btn primary" type="button">Cargar modelo</button>
+        <button id="btn-clear-model" class="debug-btn" type="button">Quitar</button>
+      </div>
+      <div class="debug-hint" id="pc-hint">WASD mover/conducir · Shift correr · Espacio saltar · E puerta/moto · F saludar · V vista · C free-cam · F2 FPS/TPS · P pausa · L lenta · G guardar · K cargar</div>
+    </div>
+  </aside>
 
   <div id="touch-controls">
     <div id="joystick-zone" aria-label="Joystick virtual">
@@ -318,7 +501,7 @@ export function generateStandaloneHtml(): string {
   </div>
 
   <div id="loading-overlay">
-    <div id="loading-text">Cargando Soldier.glb (0%)...</div>
+    <div id="loading-text">Cargando escena 3D (0%)...</div>
     <div class="loading-bar-track">
       <div class="loading-bar-fill" id="loading-bar"></div>
     </div>
@@ -327,11 +510,15 @@ export function generateStandaloneHtml(): string {
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
     import * as CANNON from 'cannon-es';
 
     const SOLDIER_URL = '${SOLDIER_MODEL_URL}';
-    const MOTORCYCLE_URL = '${MOTORCYCLE_MODEL_URL}';
+    const HONDA_OBJ_URL = '${HONDA_OBJ_URL}';
+    const HONDA_MTL_URL = '${HONDA_MTL_URL}';
     const LEVEL_JSON = ${levelJson};
     const CAMERA_VIEWS = ${cameraViewsJson};
     const DOOR_CONFIG = ${doorConfigJson};
@@ -383,6 +570,10 @@ export function generateStandaloneHtml(): string {
         this.engineSubOsc = null;
         this.engineFilter = null;
         this.engineGain = null;
+        this.noiseSource = null;
+        this.noiseFilter = null;
+        this.noiseGain = null;
+        this.simulatedRpm = 1100;
         this.engineActive = false;
       }
 
@@ -393,7 +584,7 @@ export function generateStandaloneHtml(): string {
           if (!AudioCtx) return null;
           this.ctx = new AudioCtx();
           this.masterGain = this.ctx.createGain();
-          this.masterGain.gain.value = 0.75;
+          this.masterGain.gain.value = 0.78;
           this.masterGain.connect(this.ctx.destination);
         }
         if (this.ctx.state === 'suspended') {
@@ -412,22 +603,22 @@ export function generateStandaloneHtml(): string {
 
         this.engineFilter = ctx.createBiquadFilter();
         this.engineFilter.type = 'lowpass';
-        this.engineFilter.frequency.value = 210;
-        this.engineFilter.Q.value = 2.4;
+        this.engineFilter.frequency.value = 180;
+        this.engineFilter.Q.value = 2.6;
 
         this.engineGain = ctx.createGain();
         this.engineGain.gain.value = 0.0001;
 
         this.engineMainOsc = ctx.createOscillator();
         this.engineMainOsc.type = 'sawtooth';
-        this.engineMainOsc.frequency.value = 46;
+        this.engineMainOsc.frequency.value = 44;
 
         this.engineSubOsc = ctx.createOscillator();
         this.engineSubOsc.type = 'triangle';
-        this.engineSubOsc.frequency.value = 23;
+        this.engineSubOsc.frequency.value = 22;
 
         const subGain = ctx.createGain();
-        subGain.gain.value = 0.65;
+        subGain.gain.value = 0.45;
 
         this.engineMainOsc.connect(this.engineFilter);
         this.engineSubOsc.connect(subGain);
@@ -435,30 +626,63 @@ export function generateStandaloneHtml(): string {
         this.engineFilter.connect(this.engineGain);
         this.engineGain.connect(this.masterGain);
 
+        const noiseLen = Math.floor(ctx.sampleRate * 2);
+        const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+        const channel = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < noiseLen; i++) channel[i] = Math.random() * 2 - 1;
+
+        this.noiseSource = ctx.createBufferSource();
+        this.noiseSource.buffer = noiseBuffer;
+        this.noiseSource.loop = true;
+
+        this.noiseFilter = ctx.createBiquadFilter();
+        this.noiseFilter.type = 'bandpass';
+        this.noiseFilter.frequency.value = 720;
+        this.noiseFilter.Q.value = 0.9;
+
+        this.noiseGain = ctx.createGain();
+        this.noiseGain.gain.value = 0.0001;
+
+        this.noiseSource.connect(this.noiseFilter);
+        this.noiseFilter.connect(this.noiseGain);
+        this.noiseGain.connect(this.masterGain);
+
         this.engineMainOsc.start();
         this.engineSubOsc.start();
+        this.noiseSource.start();
         this.engineActive = true;
       }
 
-      updateEngine(speedRatio, isMounted, isPaused, scale = 1.0) {
+      updateEngine(speedRatio, isMounted, isPaused, scale = 1.0, throttle = 0) {
         if (this.muted || !isMounted || isPaused) {
-          if (this.ctx && this.engineGain) {
-            this.engineGain.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.06);
+          if (this.ctx) {
+            const now = this.ctx.currentTime;
+            if (this.engineGain) this.engineGain.gain.setTargetAtTime(0.0001, now, 0.06);
+            if (this.noiseGain) this.noiseGain.gain.setTargetAtTime(0.0001, now, 0.06);
           }
           return;
         }
         if (!this.engineActive) this.ensureEngineNodes();
         if (!this.ctx || !this.engineActive) return;
 
-        const clamped = Math.max(0, Math.min(1, speedRatio));
+        const clampedSpeed = Math.max(0, Math.min(1, speedRatio));
+        const throttleRev = Math.max(0, throttle) * 1450;
+        const targetRpm = Math.min(8800, 1100 + clampedSpeed * 6250 + throttleRev);
+        this.simulatedRpm += (targetRpm - this.simulatedRpm) * 0.14;
+
+        const rpmNorm = Math.max(0, Math.min(1, (this.simulatedRpm - 1000) / 7800));
         const now = this.ctx.currentTime;
         const scalePitch = scale < 0.9 ? 0.65 : 1.0;
 
-        const mainFreq = (46 + clamped * 108) * scalePitch;
-        this.engineMainOsc.frequency.setTargetAtTime(mainFreq, now, 0.05);
-        this.engineSubOsc.frequency.setTargetAtTime(mainFreq * 0.5, now, 0.05);
-        this.engineFilter.frequency.setTargetAtTime((210 + clamped * 980) * scalePitch, now, 0.06);
-        this.engineGain.gain.setTargetAtTime(0.055 + clamped * 0.11, now, 0.06);
+        const mainFreq = (42 + rpmNorm * 148) * scalePitch;
+        const cutoff = (180 + Math.pow(rpmNorm, 1.15) * 2250) * scalePitch;
+        this.engineMainOsc.frequency.setTargetAtTime(mainFreq, now, 0.045);
+        this.engineSubOsc.frequency.setTargetAtTime(mainFreq * 0.5, now, 0.045);
+        this.engineFilter.frequency.setTargetAtTime(cutoff, now, 0.05);
+        this.engineGain.gain.setTargetAtTime(0.05 + rpmNorm * 0.11, now, 0.06);
+
+        this.noiseFilter.frequency.setTargetAtTime((480 + clampedSpeed * 1350) * scalePitch, now, 0.06);
+        this.noiseGain.gain.setTargetAtTime(0.003 + clampedSpeed * 0.032, now, 0.06);
       }
 
       playSound(soundId, options = {}) {
@@ -564,8 +788,12 @@ export function generateStandaloneHtml(): string {
 
     const container = document.getElementById('canvas-container');
     const crosshair = document.getElementById('crosshair');
+    const speedValueEl = document.getElementById('speed-value');
     const stateReadout = document.getElementById('state-readout');
+    const hondaPartsBox = document.getElementById('honda-parts-box');
     const interactPromptEl = document.getElementById('interact-prompt');
+    const debugToggle = document.getElementById('debug-toggle');
+    const debugPanel = document.getElementById('debug-panel');
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
     const loadingBar = document.getElementById('loading-bar');
@@ -573,6 +801,21 @@ export function generateStandaloneHtml(): string {
     const interactButton = document.getElementById('interact-button');
     const waveButton = document.getElementById('wave-button');
     const jumpButton = document.getElementById('jump-button');
+    const btnFreeCam = document.getElementById('btn-freecam');
+    const btnSave = document.getElementById('btn-save');
+    const btnLoad = document.getElementById('btn-load');
+    const btnPause = document.getElementById('btn-pause');
+    const btnPresetBox = document.getElementById('btn-preset-box');
+    const btnPresetHelmet = document.getElementById('btn-preset-helmet');
+    const testModelUrlInput = document.getElementById('test-model-url');
+    const testModelStatusEl = document.getElementById('test-model-status');
+    const btnLoadModel = document.getElementById('btn-load-model');
+    const btnClearModel = document.getElementById('btn-clear-model');
+
+    debugToggle.addEventListener('click', () => {
+      const open = debugPanel.classList.toggle('open');
+      debugToggle.setAttribute('aria-expanded', String(open));
+    });
 
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches;
     if (isTouchDevice) {
@@ -610,7 +853,7 @@ export function generateStandaloneHtml(): string {
     const dirLight = new THREE.DirectionalLight(0xfff6ea, 1.85);
     dirLight.position.set(12, 22, 10);
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.mapSize.set(1024, 1024);
     dirLight.shadow.camera.near = 1;
     dirLight.shadow.camera.far = 65;
     const shadowSpan = 24;
@@ -635,8 +878,11 @@ export function generateStandaloneHtml(): string {
     const groundMat = new CANNON.Material('ground');
     const playerMat = new CANNON.Material('player');
     const vehicleMat = new CANNON.Material('vehicle');
+    const ragdollMat = new CANNON.Material('ragdoll');
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, playerMat, { friction: 0.0, restitution: 0.0 }));
     world.addContactMaterial(new CANNON.ContactMaterial(groundMat, vehicleMat, { friction: 0.0, restitution: 0.0 }));
+    world.addContactMaterial(new CANNON.ContactMaterial(groundMat, ragdollMat, { friction: 0.65, restitution: 0.18 }));
+    world.addContactMaterial(new CANNON.ContactMaterial(vehicleMat, ragdollMat, { friction: 0.45, restitution: 0.25 }));
 
     const groundBody = new CANNON.Body({
       mass: 0,
@@ -746,12 +992,47 @@ export function generateStandaloneHtml(): string {
     const _dq1 = new THREE.Quaternion();
     const _dq2 = new THREE.Quaternion();
     const _dq3 = new THREE.Quaternion();
+    const _forkSteerAxis = new THREE.Vector3(0, Math.cos(0.39), Math.sin(0.39)).normalize();
+    const _ragInvQuat = new THREE.Quaternion();
+    const _ragLocalDir = new THREE.Vector3();
+    const _ragRestDir = new THREE.Vector3();
+    const _ragTargetDir = new THREE.Vector3();
+    const _ragDeltaQuat = new THREE.Quaternion();
+    const _ragIdentityQuat = new THREE.Quaternion();
+    const _wipeoutWorldPos = new THREE.Vector3();
+    const _wipeoutWorldQuat = new THREE.Quaternion();
+    const _wipeoutInheritVel = new THREE.Vector3();
+    const _wipeoutEjectVel = new THREE.Vector3();
+    const _forceVec = new CANNON.Vec3();
+    const _dismountPos = new THREE.Vector3();
+    const _freeCamDir = new THREE.Vector3();
+    const _freeCamRight = new THREE.Vector3();
+    const _freeCamEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+    const _tmpVec3A = new THREE.Vector3();
+    const _tmpVec3B = new THREE.Vector3();
+    const _tmpVec3C = new THREE.Vector3();
+    const _tmpVec3D = new THREE.Vector3();
+    const _tmpBox3A = new THREE.Box3();
+    const _tmpBox3B = new THREE.Box3();
+    const _tmpMat4A = new THREE.Matrix4();
+    const _tmpMat4B = new THREE.Matrix4();
+    const _tmpMat4C = new THREE.Matrix4();
+    const _tmpMat4D = new THREE.Matrix4();
+    const _tmpMat4E = new THREE.Matrix4();
+    const _tmpNormMat = new THREE.Matrix3();
 
     function dampAngle(current, target, lambda, dt) {
       let diff = (target - current) % (Math.PI * 2);
       if (diff > Math.PI) diff -= Math.PI * 2;
       if (diff < -Math.PI) diff += Math.PI * 2;
       return current + diff * (1 - Math.exp(-lambda * dt));
+    }
+
+    function normalizeBoneName(name) {
+      return name
+        .toLowerCase()
+        .replace(/^(mixamorig|rig|bip\\d*|armature)[:_\\-.]*/i, '')
+        .replace(/[^a-z0-9]/g, '');
     }
 
     function makeBoneRigEntry(bone) {
@@ -766,29 +1047,51 @@ export function generateStandaloneHtml(): string {
       };
     }
 
+    function captureTposeSnapshots(model) {
+      const snaps = [];
+      model.traverse((obj) => {
+        if (obj.isBone) snaps.push({ bone: obj, quat: obj.quaternion.clone() });
+      });
+      return snaps;
+    }
+
     function buildCharacterBoneRig(model) {
       model.updateMatrixWorld(true);
       const bones = [];
       model.traverse((obj) => {
-        if (obj.isBone) bones.push(obj);
+        if (obj.isBone) bones.push({ bone: obj, norm: normalizeBoneName(obj.name) });
       });
-      const findExact = (fn) => bones.find((b) => fn(b.name.toLowerCase()));
+      const findExact = (patterns) =>
+        bones.find((b) => patterns.some((p) => b.norm === p))?.bone ||
+        bones.find((b) => patterns.some((p) => b.norm.includes(p)))?.bone;
       const rig = {};
-      const lu = findExact((n) => n.includes('leftupleg') || n.includes('leftthigh'));
-      const ru = findExact((n) => n.includes('rightupleg') || n.includes('rightthigh'));
-      const ll = findExact((n) => (n.includes('leftleg') || n.includes('leftcalf')) && !n.includes('upleg'));
-      const rl = findExact((n) => (n.includes('rightleg') || n.includes('rightcalf')) && !n.includes('upleg'));
-      const lf = findExact((n) => n.includes('leftfoot'));
-      const rf = findExact((n) => n.includes('rightfoot'));
-      const la = findExact((n) => (n.includes('leftarm') || n.includes('leftupperarm')) && !n.includes('forearm'));
-      const ra = findExact((n) => (n.includes('rightarm') || n.includes('rightupperarm')) && !n.includes('forearm'));
-      const lfa = findExact((n) => n.includes('leftforearm') || n.includes('leftlowerarm'));
-      const rfa = findExact((n) => n.includes('rightforearm') || n.includes('rightlowerarm'));
-      const lh = findExact((n) => n.endsWith('lefthand'));
-      const rh = findExact((n) => n.endsWith('righthand'));
-      const sp = findExact((n) => n.endsWith(':spine') || n === 'spine');
-      const sp1 = findExact((n) => n.includes('spine1'));
+      const hips = findExact(['hips', 'pelvis', 'rootmotion']);
+      const lu = findExact(['leftupleg', 'leftthigh', 'thighl', 'upperlegl']);
+      const ru = findExact(['rightupleg', 'rightthigh', 'thighr', 'upperlegr']);
+      const ll =
+        bones.find((b) => b.norm === 'leftleg' || b.norm === 'leftcalf' || b.norm === 'shinl')?.bone ||
+        bones.find((b) => (b.norm.includes('leftleg') || b.norm.includes('leftcalf')) && !b.norm.includes('upleg'))?.bone;
+      const rl =
+        bones.find((b) => b.norm === 'rightleg' || b.norm === 'rightcalf' || b.norm === 'shinr')?.bone ||
+        bones.find((b) => (b.norm.includes('rightleg') || b.norm.includes('rightcalf')) && !b.norm.includes('upleg'))?.bone;
+      const lf = findExact(['leftfoot', 'footl']);
+      const rf = findExact(['rightfoot', 'footr']);
+      const la =
+        bones.find((b) => b.norm === 'leftarm' || b.norm === 'leftupperarm' || b.norm === 'upperarml')?.bone ||
+        bones.find((b) => (b.norm.includes('leftarm') || b.norm.includes('leftupperarm')) && !b.norm.includes('forearm'))?.bone;
+      const ra =
+        bones.find((b) => b.norm === 'rightarm' || b.norm === 'rightupperarm' || b.norm === 'upperarmr')?.bone ||
+        bones.find((b) => (b.norm.includes('rightarm') || b.norm.includes('rightupperarm')) && !b.norm.includes('forearm'))?.bone;
+      const lfa = findExact(['leftforearm', 'leftlowerarm', 'forearml', 'lowerarml']);
+      const rfa = findExact(['rightforearm', 'rightlowerarm', 'forearmr', 'lowerarmr']);
+      const lh = findExact(['lefthand', 'handl']);
+      const rh = findExact(['righthand', 'handr']);
+      const sp = bones.find((b) => b.norm === 'spine')?.bone;
+      const sp1 = bones.find((b) => b.norm === 'spine1' || b.norm === 'chest')?.bone;
+      const sp2 = bones.find((b) => b.norm === 'spine2' || b.norm === 'upperchest')?.bone;
+      const hd = bones.find((b) => b.norm === 'head')?.bone;
 
+      if (hips) rig.hips = makeBoneRigEntry(hips);
       if (lu) rig.leftUpLeg = makeBoneRigEntry(lu);
       if (ru) rig.rightUpLeg = makeBoneRigEntry(ru);
       if (ll) rig.leftLeg = makeBoneRigEntry(ll);
@@ -803,6 +1106,8 @@ export function generateStandaloneHtml(): string {
       if (rh) rig.rightHand = makeBoneRigEntry(rh);
       if (sp) rig.spine = makeBoneRigEntry(sp);
       if (sp1) rig.spine1 = makeBoneRigEntry(sp1);
+      if (sp2) rig.spine2 = makeBoneRigEntry(sp2);
+      if (hd) rig.head = makeBoneRigEntry(hd);
       return rig;
     }
 
@@ -909,10 +1214,6 @@ export function generateStandaloneHtml(): string {
 
     function applyBoneEulerDelta(entry, pitch, yaw = 0, roll = 0) {
       if (!entry) return;
-      if (Math.abs(pitch) > 0.001) {
-        _dq1.setFromAxisAngle(entry.pitchAxis, pitch);
-        entry.bone.quaternion.multiply(_dq1);
-      }
       if (Math.abs(yaw) > 0.001) {
         _dq2.setFromAxisAngle(entry.yawAxis, yaw);
         entry.bone.quaternion.multiply(_dq2);
@@ -920,6 +1221,10 @@ export function generateStandaloneHtml(): string {
       if (Math.abs(roll) > 0.001) {
         _dq3.setFromAxisAngle(entry.rollAxis, roll);
         entry.bone.quaternion.multiply(_dq3);
+      }
+      if (Math.abs(pitch) > 0.001) {
+        _dq1.setFromAxisAngle(entry.pitchAxis, pitch);
+        entry.bone.quaternion.multiply(_dq1);
       }
     }
 
@@ -936,22 +1241,207 @@ export function generateStandaloneHtml(): string {
       applyBoneEulerDelta(rig.rightArm, 0.25 * airBlend, 0, 0.68 * airBlend);
     }
 
-    function applyMotorcycleSeatedPose(rig, steerAngle) {
-      applyBoneEulerDelta(rig.spine, 0.2, steerAngle * 0.08, 0);
-      applyBoneEulerDelta(rig.spine1, 0.12, 0, 0);
-      applyBoneEulerDelta(rig.leftUpLeg, 0.92, -0.18, 0.24);
-      applyBoneEulerDelta(rig.rightUpLeg, 0.92, 0.18, -0.24);
-      applyBoneEulerDelta(rig.leftLeg, -1.32, 0, 0);
-      applyBoneEulerDelta(rig.rightLeg, -1.32, 0, 0);
-      applyBoneEulerDelta(rig.leftFoot, 0.22, 0, 0);
-      applyBoneEulerDelta(rig.rightFoot, 0.22, 0, 0);
-      const steerReach = steerAngle * 0.16;
-      applyBoneEulerDelta(rig.leftArm, 1.12 - steerReach, -0.22, -0.14);
-      applyBoneEulerDelta(rig.rightArm, 1.12 + steerReach, 0.22, 0.14);
-      applyBoneEulerDelta(rig.leftForeArm, 0.36, 0.15, 0);
-      applyBoneEulerDelta(rig.rightForeArm, 0.36, -0.15, 0);
-      applyBoneEulerDelta(rig.leftHand, -0.22, 0, 0);
-      applyBoneEulerDelta(rig.rightHand, -0.22, 0, 0);
+    function applyMotorcycleSeatedPose(rig, steerAngle, fallbackHeadingGroup) {
+      if (!rig.leftArm && !rig.rightArm && !rig.leftUpLeg && !rig.rightUpLeg) {
+        if (fallbackHeadingGroup) {
+          fallbackHeadingGroup.rotation.x = -0.18;
+          fallbackHeadingGroup.traverse((obj) => {
+            const n = obj.name.toLowerCase();
+            if (n.includes('arm') || n.includes('brazo')) obj.rotation.x = 1.05;
+            else if (n.includes('leg') || n.includes('pierna')) obj.rotation.x = 0.85;
+          });
+        }
+        return;
+      }
+      applyBoneEulerDelta(rig.spine, -0.26, steerAngle * 0.08, 0);
+      applyBoneEulerDelta(rig.spine1, -0.18, 0, 0);
+      applyBoneEulerDelta(rig.spine2, -0.12, 0, 0);
+      applyBoneEulerDelta(rig.head, 0.42, steerAngle * 0.08, 0);
+      applyBoneEulerDelta(rig.leftUpLeg, 0.96, 0, -0.28);
+      applyBoneEulerDelta(rig.rightUpLeg, 0.96, 0, 0.28);
+      applyBoneEulerDelta(rig.leftLeg, -1.62, 0, 0);
+      applyBoneEulerDelta(rig.rightLeg, -1.62, 0, 0);
+      applyBoneEulerDelta(rig.leftFoot, 0.28, 0, 0);
+      applyBoneEulerDelta(rig.rightFoot, 0.28, 0, 0);
+      const steerYaw = steerAngle * 0.16;
+      const steerPitch = steerAngle * 0.12;
+      applyBoneEulerDelta(rig.leftArm, -steerPitch, -1.24 + steerYaw, 0.18);
+      applyBoneEulerDelta(rig.rightArm, steerPitch, 1.24 + steerYaw, -0.18);
+      applyBoneEulerDelta(rig.leftForeArm, 0.2, -0.24, -0.1);
+      applyBoneEulerDelta(rig.rightForeArm, 0.2, 0.24, 0.1);
+      applyBoneEulerDelta(rig.leftHand, 0, 0, -0.18);
+      applyBoneEulerDelta(rig.rightHand, 0, 0, 0.18);
+    }
+
+    function aimRigBoneTowardLocalDir(entry, restX, restY, restZ, targetX, targetY, targetZ, blend = 0.85) {
+      if (!entry) return;
+      _ragRestDir.set(0, 0, 0).addScaledVector(entry.pitchAxis, restX).addScaledVector(entry.yawAxis, restY).addScaledVector(entry.rollAxis, restZ);
+      _ragTargetDir.set(0, 0, 0).addScaledVector(entry.pitchAxis, targetX).addScaledVector(entry.yawAxis, targetY).addScaledVector(entry.rollAxis, targetZ);
+      if (_ragRestDir.lengthSq() < 0.0001 || _ragTargetDir.lengthSq() < 0.0001) return;
+      _ragRestDir.normalize();
+      _ragTargetDir.normalize();
+      _ragDeltaQuat.setFromUnitVectors(_ragRestDir, _ragTargetDir);
+      if (blend < 0.999) _ragDeltaQuat.slerp(_ragIdentityQuat, 1 - blend);
+      entry.bone.quaternion.multiply(_ragDeltaQuat);
+    }
+
+    let cachedHondaPalette = null;
+    function getCachedHondaMaterialPalette() {
+      if (cachedHondaPalette) return cachedHondaPalette;
+      cachedHondaPalette = {
+        tireMat: new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.88, metalness: 0.05 }),
+        chromeMat: new THREE.MeshStandardMaterial({ color: 0xe5e7eb, metalness: 1.0, roughness: 0.18 }),
+        engineMat: new THREE.MeshStandardMaterial({ color: 0x3f3f46, metalness: 0.75, roughness: 0.42 }),
+        frameMat: new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.35, roughness: 0.28 }),
+        bodyworkMat: new THREE.MeshStandardMaterial({ color: 0x991b1b, metalness: 0.45, roughness: 0.24 }),
+        seatMat: new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.82, metalness: 0.06 }),
+        headlightMat: new THREE.MeshStandardMaterial({ color: 0xfffbeb, emissive: 0xfef3c7, emissiveIntensity: 1.8, roughness: 0.16, metalness: 0.1 }),
+        tailLightMat: new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xdc2626, emissiveIntensity: 1.8, roughness: 0.2, metalness: 0.1 }),
+        indicatorMat: new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 1.15, roughness: 0.24, metalness: 0.15 }),
+        neutralMat: new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.6, metalness: 0.2 }),
+      };
+      return cachedHondaPalette;
+    }
+
+    function resolveHondaPartMaterial(meshName, matName, palette) {
+      const combined = (meshName + ' ' + matName).toLowerCase();
+      if (combined.includes('stop') || combined.includes('tail') || combined.includes('rear')) return { material: palette.tailLightMat, category: 'stop-emisivo' };
+      if (combined.includes('fanale') || combined.includes('headlight') || combined.includes('light') || combined.includes('lamp')) return { material: palette.headlightMat, category: 'faro-emisivo' };
+      if (combined.includes('frecc')) return { material: palette.indicatorMat, category: 'intermitente' };
+      if (combined.includes('gomma') || combined.includes('pneumatic') || combined.includes('tire') || combined.includes('wheel') || combined.includes('ruota')) return { material: palette.tireMat, category: 'neumatico' };
+      if (combined.includes('sella') || combined.includes('seat') || combined.includes('plasticanera') || combined.includes('plastica_nera')) return { material: palette.seatMat, category: 'asiento/plastico-negro' };
+      if (combined.includes('cromo') || combined.includes('crome') || combined.includes('crhome') || combined.includes('fregio') || combined.includes('chrome') || combined.includes('exhaust') || combined.includes('scarico') || combined.includes('pipe') || combined.includes('fork') || combined.includes('forcella') || combined.includes('terminali') || combined.includes('manubrio') || combined.includes('specchio') || combined.includes('cerchi') || combined.includes('raggi') || combined.includes('steel') || combined.includes('bulloni')) return { material: palette.chromeMat, category: 'cromo' };
+      if (combined.includes('engine') || combined.includes('carter') || combined.includes('motore') || combined.includes('cilind') || combined.includes('block') || combined.includes('testata') || combined.includes('ingranaggio') || combined.includes('catena') || combined.includes('minuteria') || combined.includes('brake') || combined.includes('aria')) return { material: palette.engineMat, category: 'motor' };
+      if (combined.includes('frame') || combined.includes('vernice') || combined.includes('telaio') || combined.includes('tank') || combined.includes('serbatoio') || combined.includes('fender') || combined.includes('parafango')) return { material: palette.frameMat, category: 'chasis-negro' };
+      if (combined.includes('carrozzeria')) return { material: palette.bodyworkMat, category: 'carroceria' };
+      return { material: palette.neutralMat, category: 'gris-neutro' };
+    }
+
+    function shouldHondaPartCastShadow(meshName, category, maxDim) {
+      const n = meshName.toLowerCase();
+      if (n.includes('bulloni') || n.includes('minuteria') || n.includes('raggi') || n.includes('vetri') || n.includes('specchio') || n.includes('cruscotto') || n.includes('tachimetri') || n.includes('fregio')) return false;
+      if (category === 'stop-emisivo' || category === 'faro-emisivo' || category === 'intermitente') return false;
+      return maxDim >= 0.26;
+    }
+
+    function normalizeGeometryForMerge(source, transformMatrix) {
+      const geo = source.index ? source.toNonIndexed() : source.clone();
+      geo.applyMatrix4(transformMatrix);
+      if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+      for (const key of Object.keys(geo.attributes)) {
+        if (key !== 'position' && key !== 'normal') geo.deleteAttribute(key);
+      }
+      return geo;
+    }
+
+    function mergeBucketsIntoGroup(buckets, parentGroup) {
+      for (const bucket of buckets.values()) {
+        if (bucket.geos.length === 0) continue;
+        const merged = bucket.geos.length === 1 ? bucket.geos[0] : mergeGeometries(bucket.geos, false);
+        if (bucket.geos.length > 1) {
+          for (let i = 0; i < bucket.geos.length; i++) bucket.geos[i].dispose();
+        }
+        if (merged) {
+          const mesh = new THREE.Mesh(merged, bucket.material);
+          mesh.castShadow = bucket.castShadow;
+          mesh.receiveShadow = bucket.castShadow;
+          parentGroup.add(mesh);
+        }
+      }
+    }
+
+    function buildSubGeometryFromTriangles(source, triStarts, transformMatrix) {
+      if (triStarts.length === 0) return null;
+      const srcPos = source.getAttribute('position');
+      const srcNorm = source.getAttribute('normal');
+      const vCount = triStarts.length * 3;
+      const posArr = new Float32Array(vCount * 3);
+      const normArr = srcNorm ? new Float32Array(vCount * 3) : null;
+      const normalMat = transformMatrix ? _tmpNormMat.getNormalMatrix(transformMatrix) : null;
+      for (let t = 0; t < triStarts.length; t++) {
+        const base = triStarts[t];
+        for (let k = 0; k < 3; k++) {
+          const si = base + k;
+          const di = t * 3 + k;
+          _tmpVec3A.fromBufferAttribute(srcPos, si);
+          if (transformMatrix) _tmpVec3A.applyMatrix4(transformMatrix);
+          posArr[di * 3] = _tmpVec3A.x;
+          posArr[di * 3 + 1] = _tmpVec3A.y;
+          posArr[di * 3 + 2] = _tmpVec3A.z;
+          if (normArr && srcNorm) {
+            _tmpVec3B.fromBufferAttribute(srcNorm, si);
+            if (normalMat) _tmpVec3B.applyMatrix3(normalMat).normalize();
+            normArr[di * 3] = _tmpVec3B.x;
+            normArr[di * 3 + 1] = _tmpVec3B.y;
+            normArr[di * 3 + 2] = _tmpVec3B.z;
+          }
+        }
+      }
+      const out = new THREE.BufferGeometry();
+      out.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+      if (normArr) out.setAttribute('normal', new THREE.BufferAttribute(normArr, 3));
+      else out.computeVertexNormals();
+      return out;
+    }
+
+    class TriggerSystem {
+      constructor() {
+        this.zones = [];
+      }
+      createTrigger(cfg) {
+        const [px, py, pz] = cfg.position;
+        const [sx, sy, sz] = cfg.size;
+        if (cfg.visible) {
+          const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(sx, sy, sz),
+            new THREE.MeshBasicMaterial({ color: cfg.color ?? 0x0ea5e9, transparent: true, opacity: 0.16, depthWrite: false })
+          );
+          mesh.position.set(px, py, pz);
+          scene.add(mesh);
+        }
+        const z = {
+          id: cfg.id,
+          label: cfg.label,
+          minX: px - sx * 0.5,
+          maxX: px + sx * 0.5,
+          minY: py - sy * 0.5,
+          maxY: py + sy * 0.5,
+          minZ: pz - sz * 0.5,
+          maxZ: pz + sz * 0.5,
+          once: Boolean(cfg.once),
+          firedOnce: false,
+          inside: false,
+          onEnter: cfg.onEnter,
+          onStay: cfg.onStay,
+          onExit: cfg.onExit,
+        };
+        this.zones.push(z);
+        return z;
+      }
+      update(actorType, body, dt) {
+        const ax = body.position.x, ay = body.position.y, az = body.position.z;
+        for (let i = 0; i < this.zones.length; i++) {
+          const z = this.zones[i];
+          if (z.once && z.firedOnce) continue;
+          const inside = ax >= z.minX && ax <= z.maxX && ay >= z.minY && ay <= z.maxY && az >= z.minZ && az <= z.maxZ;
+          if (inside && !z.inside) {
+            z.inside = true;
+            if (z.once) z.firedOnce = true;
+            if (z.onEnter) z.onEnter({ actorType, body });
+          } else if (inside && z.inside) {
+            if (z.onStay) z.onStay({ actorType, body }, dt);
+          } else if (!inside && z.inside) {
+            z.inside = false;
+            if (z.onExit) z.onExit({ actorType });
+          }
+        }
+      }
+      reset() {
+        for (let i = 0; i < this.zones.length; i++) {
+          this.zones[i].inside = false;
+          this.zones[i].firedOnce = false;
+        }
+      }
     }
 
     function buildProceduralMotorcycle() {
@@ -1192,18 +1682,26 @@ export function generateStandaloneHtml(): string {
     }
 
     class MotorcycleEntity extends Entity {
-      constructor(driveInput, audio) {
+      constructor(driveInput, audio, onWipeout) {
         super('motorcycle');
         this.driveInput = driveInput;
         this.audio = audio;
+        this.onWipeout = onWipeout;
         this.isMounted = false;
         this.currentForwardSpeed = 0;
+        this.prevMountedSpeed = 0;
         this.smoothSteerAngle = 0;
+        this.smoothYawRate = 0;
         this.leanAngle = 0;
+        this.wheelieAngle = 0;
+        this.wheeliePitchVel = 0;
+        this.wasWheelieActive = false;
         this.headingYaw = VEHICLE_CONFIG.spawnYaw;
         this.wheelSpinAngle = 0;
         this.minAirborneVy = 0;
         this.isGrounded = true;
+        this.rearAxleZ = 0.622;
+        this.pendingWipeoutReason = null;
 
         const [sx, sy, sz] = VEHICLE_CONFIG.boxSize;
         const [px, py, pz] = VEHICLE_CONFIG.spawnPosition;
@@ -1230,10 +1728,18 @@ export function generateStandaloneHtml(): string {
 
         this.group = new THREE.Group();
         this.leanGroup = new THREE.Group();
+        this.leanGroup.position.set(0, -sy / 2, 0);
+        this.wheeliePivot = new THREE.Group();
+        this.wheeliePivot.position.set(0, 0, this.rearAxleZ);
+        this.bikeOffsetGroup = new THREE.Group();
+        this.bikeOffsetGroup.position.set(0, sy / 2, -this.rearAxleZ);
         this.seatAnchor = new THREE.Group();
-        this.seatAnchor.position.set(0, -sy / 2 + 0.78, 0.2);
+        this.seatAnchor.position.set(0, -sy / 2 + 0.78, 0.28);
+
         this.group.add(this.leanGroup);
-        this.leanGroup.add(this.seatAnchor);
+        this.leanGroup.add(this.wheeliePivot);
+        this.wheeliePivot.add(this.bikeOffsetGroup);
+        this.bikeOffsetGroup.add(this.seatAnchor);
         scene.add(this.group);
 
         const hitProxy = new THREE.Mesh(
@@ -1245,43 +1751,271 @@ export function generateStandaloneHtml(): string {
         this.group.add(hitProxy);
 
         this.proceduralRig = buildProceduralMotorcycle();
-        this.leanGroup.add(this.proceduralRig.visualRoot);
-        this.interactTargets = [hitProxy, ...this.proceduralRig.interactMeshes];
-        this.glbRoot = null;
-        this.glbFrontWheel = null;
-        this.glbRearWheel = null;
-        this.glbFork = null;
+        this.bikeOffsetGroup.add(this.proceduralRig.visualRoot);
+        this.interactTargets = [hitProxy];
+        this.modelRoot = null;
+        this.modelFrontWheel = null;
+        this.modelRearWheel = null;
+        this.modelFork = null;
       }
 
-      attachGlbModel(model) {
-        model.position.set(0, 0, 0);
-        model.updateMatrixWorld(true);
-        const rawBox = new THREE.Box3().setFromObject(model, true);
-        const rawSize = new THREE.Vector3();
-        rawBox.getSize(rawSize);
-        const maxHoriz = Math.max(rawSize.x, rawSize.z, 0.001);
-        model.scale.setScalar(VEHICLE_CONFIG.boxSize[2] / maxHoriz);
-        if (rawSize.x > rawSize.z) model.rotation.y = Math.PI / 2;
-        model.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(model, true);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        model.position.set(-center.x, -VEHICLE_CONFIG.boxSize[1] / 2 - box.min.y, -center.z);
-        model.traverse((child) => {
+      attachHondaObjModel(rawModel) {
+        const palette = getCachedHondaMaterialPalette();
+        const bikeRoot = new THREE.Group();
+        const scaleWrapper = new THREE.Group();
+        bikeRoot.add(scaleWrapper);
+        scaleWrapper.add(rawModel);
+
+        rawModel.position.set(0, 0, 0);
+        rawModel.rotation.set(0, 0, 0);
+        rawModel.updateMatrixWorld(true);
+        let headlightZ = 0;
+        let tailLightZ = 0;
+        const allMeshes = [];
+        const partLogMap = new Map();
+        rawModel.traverse((child) => {
           if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            child.userData.interactType = 'motorcycle';
-            this.interactTargets.push(child);
+            const n = child.name.toLowerCase();
+            if (n.includes('fanale')) {
+              _tmpBox3B.setFromObject(child);
+              headlightZ = _tmpBox3B.getCenter(_tmpVec3A).z;
+            } else if (n.includes('stop')) {
+              _tmpBox3B.setFromObject(child);
+              tailLightZ = _tmpBox3B.getCenter(_tmpVec3A).z;
+            }
+            allMeshes.push(child);
           }
-          const n = child.name.toLowerCase();
-          if (!this.glbFrontWheel && /(front.*wheel|wheel.*front|wheel_f)/i.test(n)) this.glbFrontWheel = child;
-          else if (!this.glbRearWheel && /(rear.*wheel|back.*wheel|wheel.*rear|wheel_r)/i.test(n)) this.glbRearWheel = child;
-          else if (!this.glbFork && /(handle|fork|steer|manubrio)/i.test(n)) this.glbFork = child;
         });
-        this.glbRoot = model;
+        if (headlightZ > tailLightZ) rawModel.rotation.y = Math.PI;
+
+        scaleWrapper.updateMatrixWorld(true);
+        _tmpBox3A.setFromObject(scaleWrapper, true);
+        _tmpBox3A.getSize(_tmpVec3A);
+        const maxHoriz = Math.max(_tmpVec3A.x, _tmpVec3A.z, 0.001);
+        const uniformScale = VEHICLE_CONFIG.boxSize[2] / maxHoriz;
+        scaleWrapper.scale.setScalar(uniformScale);
+        _tmpBox3A.getCenter(_tmpVec3B);
+        scaleWrapper.position.set(
+          -_tmpVec3B.x * uniformScale,
+          -VEHICLE_CONFIG.boxSize[1] / 2 - _tmpBox3A.min.y * uniformScale,
+          -_tmpVec3B.z * uniformScale
+        );
+        bikeRoot.updateMatrixWorld(true);
+
+        const matCategories = new Map();
+        const matIdMap = new Map();
+        let nextMatId = 1;
+        const getMatKey = (mat, castShadow) => {
+          let id = matIdMap.get(mat);
+          if (!id) {
+            id = String(nextMatId++);
+            matIdMap.set(mat, id);
+          }
+          return \`\${id}|\${castShadow ? 1 : 0}\`;
+        };
+
+        const seatBox = _tmpBox3B.makeEmpty();
+        let hasSeatMesh = false;
+        const frontTireBox = new THREE.Box3();
+        const rearTireBox = new THREE.Box3();
+        _tmpMat4A.copy(bikeRoot.matrixWorld).invert();
+
+        for (let m = 0; m < allMeshes.length; m++) {
+          const child = allMeshes[m];
+          const meshLabel = child.name || '(sin-nombre)';
+          const meshLower = meshLabel.toLowerCase();
+          const oldMat = Array.isArray(child.material) ? child.material[0] : child.material;
+          const mName = oldMat?.name ?? '';
+          const res = resolveHondaPartMaterial(meshLabel, mName, palette);
+          partLogMap.set(\`\${meshLabel} | \${mName || '(default)'}\`, res.category);
+          if (Array.isArray(child.material)) child.material.forEach((om) => om?.dispose());
+          else oldMat?.dispose();
+          child.material = res.material;
+          matCategories.set(child, res.category);
+
+          if (meshLower.includes('sella')) {
+            seatBox.expandByObject(child);
+            hasSeatMesh = true;
+          }
+          if (meshLower.includes('pneumatici')) {
+            _tmpMat4B.multiplyMatrices(_tmpMat4A, child.matrixWorld);
+            const posAttr = child.geometry.getAttribute('position');
+            for (let i = 0; i < posAttr.count; i++) {
+              _tmpVec3A.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4B);
+              if (_tmpVec3A.z < -0.15) frontTireBox.expandByPoint(_tmpVec3A);
+              else if (_tmpVec3A.z > 0.15) rearTireBox.expandByPoint(_tmpVec3A);
+            }
+          }
+        }
+
+        const partsList = Array.from(partLogMap.entries()).map(([pair, cat]) => \`\${pair} -> \${cat}\`);
+        console.log('[Honda CB 750] Nombres únicos mesh/material detectados:', partsList);
+        hondaPartsBox.textContent = partsList.join('\\n');
+        hondaPartsBox.classList.add('visible');
+
+        if (hasSeatMesh && !seatBox.isEmpty()) {
+          seatBox.getSize(_tmpVec3A);
+          this.seatAnchor.position.set(0, seatBox.min.y + _tmpVec3A.y * 0.38, seatBox.min.z + _tmpVec3A.z * 0.34);
+        } else {
+          const minY = -VEHICLE_CONFIG.boxSize[1] / 2;
+          const sizeY = (_tmpBox3A.max.y - _tmpBox3A.min.y) * uniformScale;
+          const sizeZ = (_tmpBox3A.max.z - _tmpBox3A.min.z) * uniformScale;
+          this.seatAnchor.position.set(0, minY + sizeY * 0.62, -sizeZ * 0.5 + sizeZ * 0.64);
+        }
+
+        const frontAxle = frontTireBox.isEmpty() ? _tmpVec3C.set(0, -0.221, -0.701) : frontTireBox.getCenter(_tmpVec3C);
+        const rearAxle = rearTireBox.isEmpty() ? _tmpVec3D.set(0, -0.208, 0.622) : rearTireBox.getCenter(_tmpVec3D);
+
+        this.rearAxleZ = rearAxle.z;
+        this.wheeliePivot.position.set(0, 0, this.rearAxleZ);
+        this.bikeOffsetGroup.position.set(0, VEHICLE_CONFIG.boxSize[1] / 2, -this.rearAxleZ);
+
+        const forkPivot = new THREE.Group();
+        forkPivot.position.set(0, 0.36, -0.45);
+        bikeRoot.add(forkPivot);
+
+        const frontWheelSpin = new THREE.Group();
+        frontWheelSpin.position.set(0, frontAxle.y - forkPivot.position.y, frontAxle.z - forkPivot.position.z);
+        forkPivot.add(frontWheelSpin);
+
+        const rearWheelSpin = new THREE.Group();
+        rearWheelSpin.position.set(0, rearAxle.y, rearAxle.z);
+        bikeRoot.add(rearWheelSpin);
+
+        bikeRoot.updateMatrixWorld(true);
+        _tmpMat4A.copy(bikeRoot.matrixWorld).invert();
+        _tmpMat4B.copy(forkPivot.matrixWorld).invert();
+        _tmpMat4C.copy(frontWheelSpin.matrixWorld).invert();
+        _tmpMat4D.copy(rearWheelSpin.matrixWorld).invert();
+
+        const staticBuckets = new Map();
+        const forkBuckets = new Map();
+        const frontWheelBuckets = new Map();
+        const rearWheelBuckets = new Map();
+        const pushToBucket = (buckets, mat, castShadow, geo) => {
+          if (!geo) return;
+          const key = getMatKey(mat, castShadow);
+          let entry = buckets.get(key);
+          if (!entry) {
+            entry = { material: mat, castShadow, geos: [] };
+            buckets.set(key, entry);
+          }
+          entry.geos.push(geo);
+        };
+
+        const vA = new THREE.Vector3();
+        const vB = new THREE.Vector3();
+        const vC = new THREE.Vector3();
+        const centroid = new THREE.Vector3();
+
+        for (let m = 0; m < allMeshes.length; m++) {
+          const mesh = allMeshes[m];
+          const n = mesh.name.toLowerCase();
+          const mat = mesh.material;
+          const cat = matCategories.get(mesh) ?? 'gris-neutro';
+          mesh.geometry.computeBoundingBox();
+          const bb = mesh.geometry.boundingBox;
+          const maxMeshDim = bb ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * uniformScale : 0.4;
+          const castShadow = shouldHondaPartCastShadow(mesh.name, cat, maxMeshDim);
+          const isTrueWheel = n.includes('pneumatici') || n.includes('cerchi') || n.includes('crhome') || n.includes('brake');
+
+          if (isTrueWheel && !mesh.geometry.index) {
+            const posAttr = mesh.geometry.getAttribute('position');
+            _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
+            const frontTris = [], rearTris = [], staticTris = [];
+            const isTire = n.includes('pneumatici');
+            const maxR = isTire ? 0.34 : n.includes('brake') ? 0.19 : 0.255;
+            const maxX = isTire ? 0.08 : n.includes('brake') ? 0.075 : 0.068;
+            for (let i = 0; i + 2 < posAttr.count; i += 3) {
+              vA.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4E);
+              vB.fromBufferAttribute(posAttr, i + 1).applyMatrix4(_tmpMat4E);
+              vC.fromBufferAttribute(posAttr, i + 2).applyMatrix4(_tmpMat4E);
+              centroid.copy(vA).add(vB).add(vC).multiplyScalar(1 / 3);
+              const dFront = Math.hypot(centroid.y - frontAxle.y, centroid.z - frontAxle.z);
+              const dRear = Math.hypot(centroid.y - rearAxle.y, centroid.z - rearAxle.z);
+              if (Math.abs(centroid.x) < maxX && dFront < maxR) frontTris.push(i);
+              else if (Math.abs(centroid.x) < maxX && dRear < maxR && !n.includes('brake')) rearTris.push(i);
+              else staticTris.push(i);
+            }
+            if (frontTris.length > 0) {
+              _tmpMat4E.multiplyMatrices(_tmpMat4C, mesh.matrixWorld);
+              pushToBucket(frontWheelBuckets, mat, isTire, buildSubGeometryFromTriangles(mesh.geometry, frontTris, _tmpMat4E));
+            }
+            if (rearTris.length > 0) {
+              _tmpMat4E.multiplyMatrices(_tmpMat4D, mesh.matrixWorld);
+              pushToBucket(rearWheelBuckets, mat, isTire, buildSubGeometryFromTriangles(mesh.geometry, rearTris, _tmpMat4E));
+            }
+            if (staticTris.length > 0) {
+              _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
+              pushToBucket(staticBuckets, mat, castShadow, buildSubGeometryFromTriangles(mesh.geometry, staticTris, _tmpMat4E));
+            }
+            mesh.geometry.dispose();
+            continue;
+          }
+          if (n.includes('manubrio') && !mesh.geometry.index) {
+            const posAttr = mesh.geometry.getAttribute('position');
+            _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
+            const upperTris = [], fixedTris = [];
+            for (let i = 0; i + 2 < posAttr.count; i += 3) {
+              vA.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4E);
+              vB.fromBufferAttribute(posAttr, i + 1).applyMatrix4(_tmpMat4E);
+              vC.fromBufferAttribute(posAttr, i + 2).applyMatrix4(_tmpMat4E);
+              centroid.copy(vA).add(vB).add(vC).multiplyScalar(1 / 3);
+              if (centroid.y > 0.31 && centroid.z < -0.14) upperTris.push(i);
+              else fixedTris.push(i);
+            }
+            if (upperTris.length > 0) {
+              _tmpMat4E.multiplyMatrices(_tmpMat4B, mesh.matrixWorld);
+              pushToBucket(forkBuckets, mat, false, buildSubGeometryFromTriangles(mesh.geometry, upperTris, _tmpMat4E));
+            }
+            if (fixedTris.length > 0) {
+              _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
+              pushToBucket(staticBuckets, mat, false, buildSubGeometryFromTriangles(mesh.geometry, fixedTris, _tmpMat4E));
+            }
+            mesh.geometry.dispose();
+            continue;
+          }
+          if (n.includes('fanale') || n.includes('tachimetri') || n.includes('cruscotto') || n.includes('vetri') || n.includes('specchio')) {
+            _tmpMat4E.multiplyMatrices(_tmpMat4B, mesh.matrixWorld);
+            pushToBucket(forkBuckets, mat, false, normalizeGeometryForMerge(mesh.geometry, _tmpMat4E));
+          } else {
+            _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
+            pushToBucket(staticBuckets, mat, castShadow, normalizeGeometryForMerge(mesh.geometry, _tmpMat4E));
+          }
+          mesh.geometry.dispose();
+        }
+
+        bikeRoot.remove(scaleWrapper);
+        mergeBucketsIntoGroup(staticBuckets, bikeRoot);
+        mergeBucketsIntoGroup(forkBuckets, forkPivot);
+        mergeBucketsIntoGroup(frontWheelBuckets, frontWheelSpin);
+        mergeBucketsIntoGroup(rearWheelBuckets, rearWheelSpin);
+
+        this.modelFork = forkPivot;
+        this.modelFrontWheel = frontWheelSpin;
+        this.modelRearWheel = rearWheelSpin;
+        this.modelRoot = bikeRoot;
         this.proceduralRig.visualRoot.visible = false;
-        this.leanGroup.add(model);
+        this.bikeOffsetGroup.add(bikeRoot);
+      }
+
+      triggerWipeout(reason, vFwdBefore) {
+        if (!this.isMounted) return;
+        this.seatAnchor.updateMatrixWorld(true);
+        this.seatAnchor.getWorldPosition(_wipeoutWorldPos);
+        this.seatAnchor.getWorldQuaternion(_wipeoutWorldQuat);
+        _bikeQuat.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
+        _bikeFwd.set(0, 0, -1).applyQuaternion(_bikeQuat);
+        _bikeFwd.y = 0;
+        if (_bikeFwd.lengthSq() > 0.0001) _bikeFwd.normalize();
+        const baseSpeed = Math.max(vFwdBefore, this.currentForwardSpeed);
+        _wipeoutInheritVel.set(_bikeFwd.x * baseSpeed, Math.max(0, this.body.velocity.y), _bikeFwd.z * baseSpeed);
+        if (reason === 'wheelie') _wipeoutEjectVel.set(-_bikeFwd.x * 1.4, 3.4, -_bikeFwd.z * 1.4);
+        else _wipeoutEjectVel.set(_bikeFwd.x * 3.8, 4.1, _bikeFwd.z * 3.8);
+        this.isMounted = false;
+        this.wasWheelieActive = false;
+        this.wheeliePitchVel = -1.6;
+        this.pendingWipeoutReason = reason;
       }
 
       capturePostStep() {
@@ -1322,6 +2056,7 @@ export function generateStandaloneHtml(): string {
               const factor = THREE.MathUtils.clamp((-impactVy - 7) / 7, 0.4, 1.15);
               triggerCameraShake(0.12 * factor, 0.25);
               this.audio.playSound('land_hard', { volume: 0.85 });
+              if (this.isMounted && impactVy < -11.5) this.triggerWipeout('crash', this.currentForwardSpeed);
             }
             this.minAirborneVy = 0;
           }
@@ -1342,26 +2077,81 @@ export function generateStandaloneHtml(): string {
         let vLat = this.body.velocity.x * _bikeRight.x + this.body.velocity.z * _bikeRight.z;
 
         if (this.isMounted) {
+          if (this.prevMountedSpeed - vFwd > VEHICLE_CONFIG.crashDeltaSpeed) {
+            this.triggerWipeout('crash', this.prevMountedSpeed);
+            return;
+          }
           const throttle = this.driveInput.throttle;
           const steer = this.driveInput.steer;
+          const pullBack = throttle < -0.15 ? Math.abs(throttle) : 0;
+          const canWheelie = pullBack > 0 && (this.isGrounded || this.wheelieAngle > 0.04) && (vFwd > VEHICLE_CONFIG.wheelieMinSpeed || this.wheelieAngle > 0.06);
+
           if (throttle > 0.05) {
-            vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed * throttle, vFwd + VEHICLE_CONFIG.accel * throttle * fixedDt);
+            const speedNorm = THREE.MathUtils.clamp(Math.abs(vFwd) / VEHICLE_CONFIG.maxForwardSpeed, 0, 1);
+            const torqueCurve = 1.15 - speedNorm * 0.45;
+            vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed * throttle, vFwd + VEHICLE_CONFIG.accel * torqueCurve * throttle * fixedDt);
+          } else if (canWheelie) {
+            if (!this.wasWheelieActive) vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed, vFwd + 1.15);
+            vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed * 0.92, vFwd + 1.45 * pullBack * fixedDt);
           } else if (throttle < -0.05) {
-            if (vFwd > 0.35) vFwd = Math.max(0, vFwd - VEHICLE_CONFIG.brakeDecel * Math.abs(throttle) * fixedDt);
-            else vFwd = Math.max(-VEHICLE_CONFIG.maxReverseSpeed * Math.abs(throttle), vFwd - VEHICLE_CONFIG.accel * 0.75 * Math.abs(throttle) * fixedDt);
+            if (vFwd > 0.25) vFwd = Math.max(0, vFwd - VEHICLE_CONFIG.brakeDecel * Math.abs(throttle) * fixedDt);
+            else vFwd = Math.max(-VEHICLE_CONFIG.maxReverseSpeed * Math.abs(throttle), vFwd - VEHICLE_CONFIG.accel * 0.55 * Math.abs(throttle) * fixedDt);
           } else {
-            vFwd *= Math.exp(-VEHICLE_CONFIG.rollingDamping * fixedDt);
+            const rollingFactor = Math.exp(-VEHICLE_CONFIG.rollingDamping * fixedDt);
+            const aeroLoss = VEHICLE_CONFIG.aeroDrag * vFwd * Math.abs(vFwd) * fixedDt;
+            vFwd = vFwd * rollingFactor - aeroLoss;
             if (Math.abs(vFwd) < 0.04) vFwd = 0;
           }
+
+          const safeWheelieRad = THREE.MathUtils.degToRad(VEHICLE_CONFIG.wheelieSafeDeg);
+          const critWheelieRad = THREE.MathUtils.degToRad(VEHICLE_CONFIG.wheelieCriticalDeg);
+          if (canWheelie) {
+            this.wasWheelieActive = true;
+            const targetPitchVel = (this.wheelieAngle >= safeWheelieRad ? 0.44 : 0.94) * pullBack;
+            this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, targetPitchVel, 7.5, fixedDt);
+            this.wheelieAngle += this.wheeliePitchVel * fixedDt;
+            if (this.wheelieAngle >= critWheelieRad) {
+              this.wheelieAngle = critWheelieRad;
+              this.triggerWipeout('wheelie', vFwd);
+              return;
+            }
+          } else {
+            this.wasWheelieActive = false;
+            if (this.wheelieAngle > 0) {
+              this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, -2.5, 6.5, fixedDt);
+              this.wheelieAngle = Math.max(0, this.wheelieAngle + this.wheeliePitchVel * fixedDt);
+              if (this.wheelieAngle <= 0.001) {
+                this.wheelieAngle = 0;
+                this.wheeliePitchVel = 0;
+              }
+            }
+          }
+
           vLat *= Math.exp(-11.0 * fixedDt);
-          this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, steer, 10, fixedDt);
-          const speedTurnFactor = THREE.MathUtils.clamp(Math.abs(vFwd) / 3.2, 0.32, 1.0);
-          const yawRate = this.smoothSteerAngle * VEHICLE_CONFIG.steerSpeed * speedTurnFactor * (vFwd < -0.25 ? -1 : 1);
-          this.body.angularVelocity.y = this.isGrounded ? yawRate : yawRate * 0.35;
+          this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, steer, 7.5, fixedDt);
+          const absSpeed = Math.abs(vFwd);
+          const speedTurnFactor = absSpeed < 0.18 ? 0 : THREE.MathUtils.smoothstep(absSpeed, 0.18, 4.8);
+          const highSpeedStabilize = 1.0 - THREE.MathUtils.clamp((absSpeed - 12) / 24, 0, 0.28);
+          const wheelieTurnScale = this.wheelieAngle > 0.12 ? 0.42 : 1.0;
+          const targetYawRate = this.smoothSteerAngle * VEHICLE_CONFIG.steerSpeed * speedTurnFactor * highSpeedStabilize * wheelieTurnScale * (vFwd < -0.25 ? -1 : 1);
+          this.smoothYawRate = THREE.MathUtils.damp(this.smoothYawRate, targetYawRate, 8.5, fixedDt);
+          this.body.angularVelocity.y = this.isGrounded ? this.smoothYawRate : this.smoothYawRate * 0.35;
+          this.prevMountedSpeed = vFwd;
         } else {
-          vFwd *= Math.exp(-6.0 * fixedDt);
+          this.prevMountedSpeed = 0;
+          this.wasWheelieActive = false;
+          if (this.wheelieAngle > 0) {
+            this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, -2.8, 7, fixedDt);
+            this.wheelieAngle = Math.max(0, this.wheelieAngle + this.wheeliePitchVel * fixedDt);
+            if (this.wheelieAngle <= 0.001) {
+              this.wheelieAngle = 0;
+              this.wheeliePitchVel = 0;
+            }
+          }
+          vFwd *= Math.exp(-2.8 * fixedDt);
           vLat *= Math.exp(-10.0 * fixedDt);
           this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, 0, 8, fixedDt);
+          this.smoothYawRate = THREE.MathUtils.damp(this.smoothYawRate, 0, 8, fixedDt);
           this.body.angularVelocity.y *= Math.exp(-8.0 * fixedDt);
         }
 
@@ -1371,6 +2161,11 @@ export function generateStandaloneHtml(): string {
       }
 
       update(dt, alpha) {
+        if (this.pendingWipeoutReason) {
+          const reason = this.pendingWipeoutReason;
+          this.pendingWipeoutReason = null;
+          this.onWipeout(reason, _wipeoutWorldPos, _wipeoutWorldQuat, _wipeoutInheritVel, _wipeoutEjectVel);
+        }
         _interpPos.lerpVectors(this.previousPosition, this.currentPosition, alpha);
         _interpQuat.slerpQuaternions(this.previousQuaternion, this.currentQuaternion, alpha);
         this.interpolatedPosition.copy(_interpPos);
@@ -1381,20 +2176,21 @@ export function generateStandaloneHtml(): string {
         _bikeEuler.setFromQuaternion(_interpQuat, 'YXZ');
         this.headingYaw = _bikeEuler.y;
 
-        const speedRatio = THREE.MathUtils.clamp(Math.abs(this.currentForwardSpeed) / VEHICLE_CONFIG.maxForwardSpeed, 0, 1);
-        const targetLean = this.isMounted ? this.smoothSteerAngle * (0.14 + speedRatio * 0.28) : 0.06;
+        const leanSpeedFactor = THREE.MathUtils.smoothstep(Math.abs(this.currentForwardSpeed), 0.45, 8.5);
+        const targetLean = this.isMounted ? this.smoothSteerAngle * leanSpeedFactor * (this.currentForwardSpeed < -0.25 ? -0.18 : 0.44) : 0.05;
         if (dt > 0) {
-          this.leanAngle = THREE.MathUtils.damp(this.leanAngle, targetLean, 9, dt);
+          this.leanAngle = THREE.MathUtils.damp(this.leanAngle, targetLean, 6.5, dt);
           this.wheelSpinAngle -= (this.currentForwardSpeed / VEHICLE_CONFIG.wheelRadius) * dt;
         }
         this.leanGroup.rotation.z = this.leanAngle;
-        this.proceduralRig.frontForkPivot.rotation.y = this.smoothSteerAngle * 0.45;
+        this.wheeliePivot.rotation.x = this.wheelieAngle;
+        this.proceduralRig.frontForkPivot.rotation.y = this.smoothSteerAngle * 0.36;
         this.proceduralRig.frontWheelSpin.rotation.x = this.wheelSpinAngle;
         this.proceduralRig.rearWheelSpin.rotation.x = this.wheelSpinAngle;
-        if (this.glbRoot) {
-          if (this.glbFork) this.glbFork.rotation.y = this.smoothSteerAngle * 0.45;
-          if (this.glbFrontWheel) this.glbFrontWheel.rotation.x = this.wheelSpinAngle;
-          if (this.glbRearWheel) this.glbRearWheel.rotation.x = this.wheelSpinAngle;
+        if (this.modelRoot) {
+          if (this.modelFork) this.modelFork.quaternion.setFromAxisAngle(_forkSteerAxis, this.smoothSteerAngle * 0.30);
+          if (this.modelFrontWheel) this.modelFrontWheel.rotation.x = this.wheelSpinAngle;
+          if (this.modelRearWheel) this.modelRearWheel.rotation.x = this.wheelSpinAngle;
         }
       }
     }
@@ -1417,6 +2213,8 @@ export function generateStandaloneHtml(): string {
           fixedRotation: true,
           allowSleep: false,
           linearDamping: 0.0,
+          collisionFilterGroup: 1,
+          collisionFilterMask: 1 | 2,
         });
         this.body.addShape(new CANNON.Sphere(r), new CANNON.Vec3(0, -cylH / 2, 0));
         this.body.addShape(new CANNON.Cylinder(r, r, cylH, 12), new CANNON.Vec3(0, 0, 0));
@@ -1437,6 +2235,7 @@ export function generateStandaloneHtml(): string {
         scene.add(this.group);
 
         this.isMounted = false;
+        this.isRagdoll = false;
         this.isFpsMode = false;
         this.mountedSteerAngle = 0;
         this.isGrounded = false;
@@ -1446,6 +2245,16 @@ export function generateStandaloneHtml(): string {
         this.waveBlend = 0;
         this.minAirborneVy = 0;
         this.stateLabel = 'Idle';
+        this.ragdollInWorld = false;
+        this.ragdollTimer = 0;
+        this.ragdollSettleTime = 0;
+        this.ragdollBodies = null;
+        this.ragdollAllBodies = [];
+        this.ragdollConstraints = [];
+        this.ragdollPrevTorsoPos = new THREE.Vector3();
+        this.ragdollCurrTorsoPos = new THREE.Vector3();
+        this.ragdollPrevTorsoQuat = new THREE.Quaternion();
+        this.ragdollCurrTorsoQuat = new THREE.Quaternion();
 
         this.baseMixer = null;
         this.upperMixer = null;
@@ -1453,12 +2262,14 @@ export function generateStandaloneHtml(): string {
         this.actions = {};
         this.activeClipName = 'Idle';
         this.boneRig = {};
+        this.tposeBoneRig = {};
+        this.tposeSnapshots = [];
         this.headBone = null;
         this.visorMeshes = [];
       }
 
       mountTo(seatAnchor) {
-        if (this.isMounted) return;
+        if (this.isMounted || this.isRagdoll) return;
         this.isMounted = true;
         this.isWaving = false;
         this.waveBlend = 0;
@@ -1467,11 +2278,13 @@ export function generateStandaloneHtml(): string {
           world.removeBody(this.body);
           this.bodyInWorld = false;
         }
+        if (this.baseMixer) this.baseMixer.stopAllAction();
+        if (this.upperMixer) this.upperMixer.stopAllAction();
         seatAnchor.add(this.group);
-        this.group.position.set(0, -0.08, 0.02);
+        this.group.position.set(0, -0.13, 0);
         this.group.quaternion.identity();
         this.headingGroup.quaternion.identity();
-        this.switchAnimation('Idle', 0.12);
+        this.headingGroup.rotation.set(0, 0, 0);
         this.audio.playSound('mount', { volume: 0.75 });
       }
 
@@ -1488,9 +2301,146 @@ export function generateStandaloneHtml(): string {
         this.syncInterpolationBuffers();
         this.group.position.copy(worldPos);
         this.group.quaternion.identity();
+        this.headingGroup.rotation.set(0, 0, 0);
         this.headingGroup.quaternion.setFromAxisAngle(_upAxis, facingYaw);
+        if (this.baseMixer && this.actions.Idle) {
+          this.baseMixer.stopAllAction();
+          this.actions.Idle.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+          this.activeClipName = 'Idle';
+          this.baseMixer.update(0);
+        }
         this.minAirborneVy = 0;
         this.audio.playSound('dismount', { volume: 0.7 });
+      }
+
+      ensureRagdollPool() {
+        if (this.ragdollBodies) return;
+        const makePooledPart = (shape, mass) => {
+          const b = new CANNON.Body({
+            mass,
+            material: ragdollMat,
+            allowSleep: false,
+            linearDamping: 0.24,
+            angularDamping: 0.45,
+            collisionFilterGroup: 2,
+            collisionFilterMask: 1,
+          });
+          b.addShape(shape);
+          this.ragdollAllBodies.push(b);
+          return b;
+        };
+        const torso = makePooledPart(new CANNON.Box(new CANNON.Vec3(0.18, 0.24, 0.13)), 32);
+        const head = makePooledPart(new CANNON.Sphere(0.14), 7);
+        const leftArm = makePooledPart(new CANNON.Sphere(0.1), 6);
+        const rightArm = makePooledPart(new CANNON.Sphere(0.1), 6);
+        const leftLeg = makePooledPart(new CANNON.Sphere(0.11), 9);
+        const rightLeg = makePooledPart(new CANNON.Sphere(0.11), 9);
+        const createLink = (bA, pAx, pAy, pAz, bB, pBx, pBy, pBz) => {
+          this.ragdollConstraints.push(new CANNON.PointToPointConstraint(bA, new CANNON.Vec3(pAx, pAy, pAz), bB, new CANNON.Vec3(pBx, pBy, pBz)));
+        };
+        createLink(torso, 0, 0.26, 0, head, 0, -0.16, 0);
+        createLink(torso, -0.2, 0.18, 0, leftArm, 0.16, 0, 0);
+        createLink(torso, 0.2, 0.18, 0, rightArm, -0.16, 0, 0);
+        createLink(torso, -0.12, -0.24, 0, leftLeg, 0, 0.2, 0);
+        createLink(torso, 0.12, -0.24, 0, rightLeg, 0, 0.2, 0);
+        this.ragdollBodies = { torso, head, leftArm, rightArm, leftLeg, rightLeg };
+      }
+
+      cleanupRagdollBodies() {
+        if (!this.ragdollInWorld) return;
+        for (let i = 0; i < this.ragdollConstraints.length; i++) world.removeConstraint(this.ragdollConstraints[i]);
+        for (let i = 0; i < this.ragdollAllBodies.length; i++) world.removeBody(this.ragdollAllBodies[i]);
+        this.ragdollInWorld = false;
+      }
+
+      enterRagdoll(worldOrigin, worldQuat, inheritVel, ejectVel) {
+        this.cleanupRagdollBodies();
+        this.ensureRagdollPool();
+        this.isMounted = false;
+        this.isRagdoll = true;
+        this.isWaving = false;
+        this.waveBlend = 0;
+        this.steerInput.jumpQueued = false;
+        this.ragdollTimer = 0;
+        this.ragdollSettleTime = 0;
+        this.pendingRagdollRecovery = false;
+        this.health = Math.max(15, this.health - 15);
+        scene.add(this.group);
+        if (this.bodyInWorld) {
+          world.removeBody(this.body);
+          this.bodyInWorld = false;
+        }
+        if (this.baseMixer) this.baseMixer.stopAllAction();
+        if (this.upperMixer) this.upperMixer.stopAllAction();
+
+        const rb = this.ragdollBodies;
+        const placePart = (b, lx, ly, lz, jitter) => {
+          _tmpVec3A.set(lx, ly, lz).applyQuaternion(worldQuat).add(worldOrigin);
+          _tmpVec3A.y = Math.max(0.45, _tmpVec3A.y);
+          b.position.set(_tmpVec3A.x, _tmpVec3A.y, _tmpVec3A.z);
+          b.quaternion.set(worldQuat.x, worldQuat.y, worldQuat.z, worldQuat.w);
+          b.velocity.set(
+            inheritVel.x + ejectVel.x + (Math.random() - 0.5) * jitter,
+            inheritVel.y + ejectVel.y + Math.random() * jitter * 0.6,
+            inheritVel.z + ejectVel.z + (Math.random() - 0.5) * jitter
+          );
+          b.angularVelocity.set(0, 0, 0);
+          b.force.set(0, 0, 0);
+          b.torque.set(0, 0, 0);
+        };
+
+        placePart(rb.torso, 0, 0.22, 0, 0.4);
+        rb.torso.angularVelocity.set((Math.random() - 0.5) * 4.5, (Math.random() - 0.5) * 3.0, (Math.random() - 0.5) * 4.5);
+        placePart(rb.head, 0, 0.66, 0, 1.2);
+        placePart(rb.leftArm, -0.34, 0.38, 0, 1.8);
+        placePart(rb.rightArm, 0.34, 0.38, 0, 1.8);
+        placePart(rb.leftLeg, -0.14, -0.24, 0, 1.4);
+        placePart(rb.rightLeg, 0.14, -0.24, 0, 1.4);
+
+        for (let i = 0; i < this.ragdollAllBodies.length; i++) world.addBody(this.ragdollAllBodies[i]);
+        for (let i = 0; i < this.ragdollConstraints.length; i++) world.addConstraint(this.ragdollConstraints[i]);
+        this.ragdollInWorld = true;
+
+        this.ragdollPrevTorsoPos.set(rb.torso.position.x, rb.torso.position.y, rb.torso.position.z);
+        this.ragdollCurrTorsoPos.copy(this.ragdollPrevTorsoPos);
+        this.ragdollPrevTorsoQuat.set(rb.torso.quaternion.x, rb.torso.quaternion.y, rb.torso.quaternion.z, rb.torso.quaternion.w);
+        this.ragdollCurrTorsoQuat.copy(this.ragdollPrevTorsoQuat);
+        triggerCameraShake(0.2, 0.36);
+        this.audio.playSound('land_hard', { volume: 0.9 });
+      }
+
+      recoverFromRagdoll(facingYaw = 0) {
+        if (!this.isRagdoll) return;
+        const torsoPos = this.ragdollBodies ? this.ragdollBodies.torso.position : new CANNON.Vec3(this.group.position.x, 0.9, this.group.position.z);
+        const standX = torsoPos.x;
+        const standY = Math.max(torsoPos.y + 0.45, this.capsuleHalfHeight + 0.05);
+        const standZ = torsoPos.z;
+        this.cleanupRagdollBodies();
+        this.isRagdoll = false;
+        this.pendingRagdollRecovery = false;
+        this.body.position.set(standX, standY, standZ);
+        this.body.velocity.set(0, 0, 0);
+        if (!this.bodyInWorld) {
+          world.addBody(this.body);
+          this.bodyInWorld = true;
+        }
+        this.syncInterpolationBuffers();
+        this.group.position.set(standX, standY, standZ);
+        this.group.quaternion.identity();
+        this.headingGroup.rotation.set(0, 0, 0);
+        this.headingGroup.quaternion.setFromAxisAngle(_upAxis, facingYaw);
+        if (this.baseMixer && this.actions.Idle) {
+          this.baseMixer.stopAllAction();
+          this.actions.Idle.reset().setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+          this.activeClipName = 'Idle';
+          this.baseMixer.update(0);
+        }
+        this.minAirborneVy = 0;
+        this.audio.playSound('dismount', { volume: 0.6 });
+      }
+
+      canRecoverManually() {
+        return this.isRagdoll && this.ragdollTimer >= 0.85;
       }
 
       syncInterpolationBuffers() {
@@ -1502,6 +2452,12 @@ export function generateStandaloneHtml(): string {
 
       capturePostStep() {
         if (this.isMounted) return;
+        if (this.isRagdoll && this.ragdollBodies) {
+          const t = this.ragdollBodies.torso;
+          this.ragdollCurrTorsoPos.set(t.position.x, t.position.y, t.position.z);
+          this.ragdollCurrTorsoQuat.set(t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w);
+          return;
+        }
         this.currentPosition.set(this.body.position.x, this.body.position.y, this.body.position.z);
         this.currentQuaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
         if (!this.isGrounded) {
@@ -1571,6 +2527,19 @@ export function generateStandaloneHtml(): string {
 
       fixedUpdate(fixedDt) {
         if (this.isMounted) return;
+        if (this.isRagdoll && this.ragdollBodies) {
+          const t = this.ragdollBodies.torso;
+          this.ragdollPrevTorsoPos.set(t.position.x, t.position.y, t.position.z);
+          this.ragdollPrevTorsoQuat.set(t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w);
+          this.ragdollTimer += fixedDt;
+          const torsoSpeed = Math.hypot(t.velocity.x, t.velocity.y, t.velocity.z);
+          this.ragdollSettleTime = torsoSpeed < 0.7 ? this.ragdollSettleTime + fixedDt : 0;
+          if ((this.ragdollSettleTime > 1.05 && this.ragdollTimer > 1.9) || this.ragdollTimer > 3.8 || t.position.y < -8) {
+            this.pendingRagdollRecovery = true;
+          }
+          return;
+        }
+
         this.previousPosition.set(this.body.position.x, this.body.position.y, this.body.position.z);
         this.previousQuaternion.set(this.body.quaternion.x, this.body.quaternion.y, this.body.quaternion.z, this.body.quaternion.w);
 
@@ -1608,7 +2577,8 @@ export function generateStandaloneHtml(): string {
           if (dvMag > 0.0001) {
             const gain = Math.min(1, (accel * fixedDt) / dvMag);
             const forceScale = (this.body.mass * dvMag * gain) / fixedDt;
-            this.body.applyForce(new CANNON.Vec3((dvx / dvMag) * forceScale, 0, (dvz / dvMag) * forceScale), this.body.position);
+            _forceVec.set((dvx / dvMag) * forceScale, 0, (dvz / dvMag) * forceScale);
+            this.body.applyForce(_forceVec, this.body.position);
           }
         } else {
           const dampingRate = this.isGrounded ? ${PHYSICS_CONFIG.groundDamping} : ${PHYSICS_CONFIG.airDamping};
@@ -1634,12 +2604,55 @@ export function generateStandaloneHtml(): string {
       }
 
       update(dt, alpha) {
+        if (this.isRagdoll && this.pendingRagdollRecovery) {
+          this.pendingRagdollRecovery = false;
+          this.recoverFromRagdoll();
+        }
+        if (this.isRagdoll && this.ragdollBodies) {
+          this.stateLabel = 'Ragdoll';
+          this.isGrounded = false;
+          this.isWaving = false;
+          this.waveBlend = 0;
+          const rb = this.ragdollBodies;
+          _interpPos.lerpVectors(this.ragdollPrevTorsoPos, this.ragdollCurrTorsoPos, alpha);
+          _interpQuat.slerpQuaternions(this.ragdollPrevTorsoQuat, this.ragdollCurrTorsoQuat, alpha);
+          this.interpolatedPosition.copy(_interpPos);
+          this.group.position.copy(_interpPos);
+          this.group.quaternion.identity();
+          this.headingGroup.quaternion.copy(_interpQuat);
+          if (this.baseMixer) this.baseMixer.update(0);
+          for (let i = 0; i < this.tposeSnapshots.length; i++) this.tposeSnapshots[i].bone.quaternion.copy(this.tposeSnapshots[i].quat);
+          const activeRig = this.tposeBoneRig.leftArm || this.tposeBoneRig.rightArm ? this.tposeBoneRig : this.boneRig;
+          _ragInvQuat.copy(_interpQuat).invert();
+          const aimPart = (entry, partBody, rx, ry, rz, ox, oy, oz) => {
+            _ragLocalDir.set(partBody.position.x - rb.torso.position.x, partBody.position.y - rb.torso.position.y, partBody.position.z - rb.torso.position.z).applyQuaternion(_ragInvQuat);
+            _ragLocalDir.x -= ox; _ragLocalDir.y -= oy; _ragLocalDir.z -= oz;
+            aimRigBoneTowardLocalDir(entry, rx, ry, rz, _ragLocalDir.x, _ragLocalDir.y, _ragLocalDir.z, 0.9);
+          };
+          aimPart(activeRig.head, rb.head, 0, 1, 0, 0, 0.24, 0);
+          aimPart(activeRig.leftArm, rb.leftArm, -1, 0, 0, -0.18, 0.16, 0);
+          aimPart(activeRig.rightArm, rb.rightArm, 1, 0, 0, 0.18, 0.16, 0);
+          aimPart(activeRig.leftUpLeg, rb.leftLeg, 0, -1, 0, -0.1, -0.22, 0);
+          aimPart(activeRig.rightUpLeg, rb.rightLeg, 0, -1, 0, 0.1, -0.22, 0);
+          applyBoneEulerDelta(activeRig.leftLeg, -0.68, 0, 0);
+          applyBoneEulerDelta(activeRig.rightLeg, -0.54, 0, 0);
+          applyBoneEulerDelta(activeRig.leftForeArm, 0.25, -0.45, 0);
+          applyBoneEulerDelta(activeRig.rightForeArm, 0.25, 0.45, 0);
+          this.applyFpsHeadMask();
+          return;
+        }
+
         if (this.isMounted) {
           this.stateLabel = 'Drive';
           this.isGrounded = true;
-          this.switchAnimation('Idle', 0.14);
-          if (this.baseMixer) this.baseMixer.update(dt > 0 ? dt : 0);
-          applyMotorcycleSeatedPose(this.boneRig, this.mountedSteerAngle);
+          this.isWaving = false;
+          this.waveBlend = 0;
+          if (this.baseMixer) this.baseMixer.update(0);
+          for (let i = 0; i < this.tposeSnapshots.length; i++) {
+            this.tposeSnapshots[i].bone.quaternion.copy(this.tposeSnapshots[i].quat);
+          }
+          const activeRig = this.tposeBoneRig.leftArm || this.tposeBoneRig.rightArm ? this.tposeBoneRig : this.boneRig;
+          applyMotorcycleSeatedPose(activeRig, this.mountedSteerAngle, this.headingGroup);
           this.applyFpsHeadMask();
           this.group.getWorldPosition(this.interpolatedPosition);
           return;
@@ -1718,8 +2731,13 @@ export function generateStandaloneHtml(): string {
     const driveState = { throttle: 0, steer: 0 };
 
     const doorEntity = entityManager.add(new DoorEntity(LEVEL_JSON.door, audioManager));
-    const motorcycleEntity = entityManager.add(new MotorcycleEntity(driveState, audioManager));
-    const playerEntity = entityManager.add(new PlayerEntity(LEVEL_JSON.spawn, steerState, audioManager));
+    let playerEntity;
+    const motorcycleEntity = entityManager.add(
+      new MotorcycleEntity(driveState, audioManager, (_reason, pos, quat, inheritVel, ejectVel) => {
+        playerEntity.enterRagdoll(pos, quat, inheritVel, ejectVel);
+      })
+    );
+    playerEntity = entityManager.add(new PlayerEntity(LEVEL_JSON.spawn, steerState, audioManager));
 
     let interactType = null;
     let interactPromptText = null;
@@ -1737,12 +2755,22 @@ export function generateStandaloneHtml(): string {
           }
         });
         playerEntity.baseMixer = new THREE.AnimationMixer(model);
-        for (const clipName of ['Idle', 'Walk', 'Run']) {
+        for (const clipName of ['Idle', 'Walk', 'Run', 'TPose']) {
           const clip = THREE.AnimationClip.findByName(gltf.animations, clipName);
           if (clip) playerEntity.actions[clipName] = playerEntity.baseMixer.clipAction(clip);
         }
+        if (playerEntity.actions.TPose) {
+          playerEntity.actions.TPose.reset().setEffectiveWeight(1).play();
+          playerEntity.baseMixer.update(0);
+        }
+        model.updateMatrixWorld(true);
+        playerEntity.tposeSnapshots = captureTposeSnapshots(model);
+        playerEntity.tposeBoneRig = buildCharacterBoneRig(model);
+
         if (playerEntity.actions.Idle) {
-          playerEntity.actions.Idle.play();
+          playerEntity.baseMixer.stopAllAction();
+          playerEntity.actions.Idle.reset().setEffectiveWeight(1).play();
+          playerEntity.activeClipName = 'Idle';
           playerEntity.baseMixer.update(0);
         }
         playerEntity.alignModelToCapsuleBase(model);
@@ -1772,12 +2800,165 @@ export function generateStandaloneHtml(): string {
       }
     );
 
-    gltfLoader.load(MOTORCYCLE_URL, (gltf) => motorcycleEntity.attachGlbModel(gltf.scene), undefined, () => {});
+    const hondaRawBase = 'https://raw.githubusercontent.com/SteelRandom/3D-Test/refs/heads/main/';
+    const transparent1pxPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const hondaManager = new THREE.LoadingManager();
+    hondaManager.setURLModifier((url) => {
+      if (url === HONDA_MTL_URL || url === HONDA_OBJ_URL || url.startsWith('data:') || url.startsWith('blob:')) return url;
+      return transparent1pxPng;
+    });
+    const mtlLoader = new MTLLoader(hondaManager);
+    mtlLoader.setResourcePath(hondaRawBase);
+    const loadHondaObj = (materials) => {
+      const objLoader = new OBJLoader(hondaManager);
+      if (materials) {
+        materials.preload();
+        objLoader.setMaterials(materials);
+      }
+      objLoader.load(HONDA_OBJ_URL, (obj) => motorcycleEntity.attachHondaObjModel(obj), undefined, () => {});
+    };
+    mtlLoader.load(HONDA_MTL_URL, (mats) => loadHondaObj(mats), undefined, () => loadHondaObj());
+
+    // Triggers de prueba (rampa + checkpoint)
+    const triggerSystem = new TriggerSystem();
+    let lastTriggerLabel = null;
+    let boostCooldown = 0;
+    triggerSystem.createTrigger({
+      id: 'trigger-ramp-boost',
+      label: 'Impulso Rampa',
+      position: [0, 0.35, -2.1],
+      size: [2.6, 1.1, 1.6],
+      color: 0x06b6d4,
+      visible: true,
+      onEnter: ({ actorType, body }) => {
+        lastTriggerLabel = 'Impulso Rampa (activo)';
+        if (boostCooldown <= 0) {
+          boostCooldown = 0.65;
+          if (actorType === 'motorcycle') {
+            body.velocity.z -= 5.2;
+            body.velocity.y = Math.max(body.velocity.y, 1.5);
+          } else {
+            body.velocity.z -= 4.2;
+            body.velocity.y = Math.max(body.velocity.y, 3.6);
+          }
+          audioManager.playSound('jump', { volume: 0.55 });
+        }
+      },
+      onExit: () => { lastTriggerLabel = 'Impulso Rampa (completado)'; },
+    });
+    triggerSystem.createTrigger({
+      id: 'trigger-platform-checkpoint',
+      label: 'Checkpoint Plataforma',
+      position: [0, 1.9, -10.2],
+      size: [3.0, 1.4, 3.0],
+      color: 0x10b981,
+      visible: true,
+      onEnter: () => {
+        lastTriggerLabel = 'Checkpoint Plataforma';
+        audioManager.playSound('door_open', { volume: 0.45 });
+      },
+      onExit: () => { lastTriggerLabel = 'Salió de Checkpoint'; },
+    });
+
+    // Cargador rápido de modelos externos de prueba (.glb / .gltf / .obj)
+    let activeTestModelRoot = null;
+    let activeTestModelMixer = null;
+    let activeTestModelUrl = null;
+    const testModelGeos = [];
+    const testModelMats = [];
+    function clearTestModel() {
+      if (activeTestModelMixer) {
+        activeTestModelMixer.stopAllAction();
+        activeTestModelMixer = null;
+      }
+      if (activeTestModelRoot) {
+        scene.remove(activeTestModelRoot);
+        activeTestModelRoot = null;
+      }
+      for (let i = 0; i < testModelGeos.length; i++) testModelGeos[i].dispose();
+      testModelGeos.length = 0;
+      for (let i = 0; i < testModelMats.length; i++) testModelMats[i].dispose();
+      testModelMats.length = 0;
+      activeTestModelUrl = null;
+      testModelStatusEl.textContent = '';
+    }
+    function finalizeTestModel(loadedRoot, animations, url, options = {}) {
+      if (options.replacePrevious !== false) clearTestModel();
+      const pos = options.position ?? [4.8, 0, 2.2];
+      const targetSize = options.targetSize ?? 1.6;
+      const allowShadow = options.castShadow !== false;
+      const wrapper = new THREE.Group();
+      wrapper.add(loadedRoot);
+      wrapper.updateMatrixWorld(true);
+      _tmpBox3A.setFromObject(wrapper, true);
+      _tmpBox3A.getSize(_tmpVec3A);
+      const maxDim = Math.max(_tmpVec3A.x, _tmpVec3A.y, _tmpVec3A.z, 0.001);
+      const scale = targetSize / maxDim;
+      loadedRoot.scale.setScalar(scale);
+      _tmpBox3A.getCenter(_tmpVec3B);
+      loadedRoot.position.set(-_tmpVec3B.x * scale, -_tmpBox3A.min.y * scale, -_tmpVec3B.z * scale);
+      wrapper.position.set(pos[0], pos[1], pos[2]);
+      const palette = url.toLowerCase().includes('honda') ? getCachedHondaMaterialPalette() : null;
+      loadedRoot.traverse((child) => {
+        if (child.isMesh) {
+          if (child.geometry) {
+            testModelGeos.push(child.geometry);
+            child.geometry.computeBoundingBox();
+          }
+          if (palette) {
+            const oldMat = Array.isArray(child.material) ? child.material[0] : child.material;
+            const res = resolveHondaPartMaterial(child.name, oldMat?.name ?? '', palette);
+            if (Array.isArray(child.material)) child.material.forEach((m) => m?.dispose());
+            else oldMat?.dispose();
+            child.material = res.material;
+          } else if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m && testModelMats.push(m));
+          } else if (child.material) {
+            testModelMats.push(child.material);
+          }
+          const bb = child.geometry?.boundingBox;
+          const partMaxDim = bb ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * scale : targetSize;
+          const cast = allowShadow && partMaxDim >= 0.25;
+          child.castShadow = cast;
+          child.receiveShadow = cast;
+        }
+      });
+      if (animations.length > 0) {
+        activeTestModelMixer = new THREE.AnimationMixer(loadedRoot);
+        activeTestModelMixer.clipAction(animations[0]).play();
+      }
+      scene.add(wrapper);
+      activeTestModelRoot = wrapper;
+      activeTestModelUrl = url;
+      testModelStatusEl.textContent = 'Cargado: ' + (url.split('/').pop() || 'modelo');
+    }
+    function loadTestModel(url, options = {}) {
+      const trimmed = (url || '').trim();
+      if (!trimmed) return;
+      testModelStatusEl.textContent = 'Cargando...';
+      if (trimmed.toLowerCase().endsWith('.obj')) {
+        new OBJLoader(hondaManager).load(trimmed, (obj) => finalizeTestModel(obj, [], trimmed, options), undefined, () => {
+          testModelStatusEl.textContent = 'Error OBJ';
+        });
+      } else {
+        gltfLoader.load(trimmed, (gltf) => finalizeTestModel(gltf.scene, gltf.animations ?? [], trimmed, options), undefined, () => {
+          testModelStatusEl.textContent = 'Error GLB';
+        });
+      }
+    }
+    window.loadTestModel = loadTestModel;
 
     // 6. Controles PC y Móvil
+    const QUICKSAVE_KEY = 'engine3d_quicksave_v1';
     const keys = Object.create(null);
     let jumpQueued = false;
     let cameraMode = 'TPS';
+    let isFreeCam = false;
+    const freeCamPos = new THREE.Vector3(0, 3.2, 6);
+    let freeCamYaw = 0;
+    let freeCamPitch = -0.22;
+    let freeCamSpeed = 9.0;
+    let saveStatus = null;
     let currentViewIndex = 0;
     let camYaw = 0;
     let prevBikeYaw = motorcycleEntity.headingYaw;
@@ -1796,39 +2977,184 @@ export function generateStandaloneHtml(): string {
     let lastPointerX = 0;
     let lastPointerY = 0;
 
-    function handleInteract() {
-      audioManager.unlock();
-      if (motorcycleEntity.isMounted) {
-        _dismountOffset.set(-1.35, 0.45, 0).applyQuaternion(motorcycleEntity.interpolatedQuaternion);
-        const dismountPos = new THREE.Vector3(
-          motorcycleEntity.interpolatedPosition.x + _dismountOffset.x,
-          Math.max(motorcycleEntity.interpolatedPosition.y + 0.45, 0.9),
-          motorcycleEntity.interpolatedPosition.z + _dismountOffset.z
-        );
-        motorcycleEntity.isMounted = false;
-        playerEntity.dismountAt(dismountPos, motorcycleEntity.headingYaw);
-        return;
-      }
-      if (interactType === 'motorcycle') {
-        motorcycleEntity.isMounted = true;
-        playerEntity.mountTo(motorcycleEntity.seatAnchor);
-        prevBikeYaw = motorcycleEntity.headingYaw;
-        camYaw = motorcycleEntity.headingYaw;
-        fpsLookYawOffset = 0;
-        if (cameraMode === 'FPS') fpsPitch = -0.14;
-      } else if (interactType === 'door') {
-        doorEntity.toggle();
+    function mountMotorcycle() {
+      if (playerEntity.isRagdoll) return;
+      motorcycleEntity.isMounted = true;
+      playerEntity.mountTo(motorcycleEntity.seatAnchor);
+      prevBikeYaw = motorcycleEntity.headingYaw;
+      camYaw = motorcycleEntity.headingYaw;
+      fpsLookYawOffset = 0;
+      if (cameraMode === 'FPS') fpsPitch = -0.14;
+    }
+
+    function dismountMotorcycle() {
+      _dismountOffset.set(-1.35, 0.45, 0).applyQuaternion(motorcycleEntity.interpolatedQuaternion);
+      _dismountPos.set(
+        motorcycleEntity.interpolatedPosition.x + _dismountOffset.x,
+        Math.max(motorcycleEntity.interpolatedPosition.y + 0.45, 0.9),
+        motorcycleEntity.interpolatedPosition.z + _dismountOffset.z
+      );
+      motorcycleEntity.isMounted = false;
+      playerEntity.dismountAt(_dismountPos, motorcycleEntity.headingYaw);
+    }
+
+    function toggleFreeCam() {
+      isFreeCam = !isFreeCam;
+      btnFreeCam.classList.toggle('active', isFreeCam);
+      if (isFreeCam) {
+        freeCamPos.copy(camera.position);
+        _freeCamEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+        freeCamYaw = _freeCamEuler.y;
+        freeCamPitch = THREE.MathUtils.clamp(_freeCamEuler.x, -1.35, 1.35);
+        playerEntity.isFpsMode = false;
+        camera.near = 0.08;
+        camera.updateProjectionMatrix();
+      } else {
+        playerEntity.isFpsMode = cameraMode === 'FPS';
       }
     }
 
+    function quickSave() {
+      if (playerEntity.isRagdoll) {
+        saveStatus = 'No guardado (ragdoll)';
+        return false;
+      }
+      try {
+        const snapshot = {
+          version: 1,
+          player: {
+            pos: [playerEntity.body.position.x, playerEntity.body.position.y, playerEntity.body.position.z],
+            vel: [playerEntity.body.velocity.x, playerEntity.body.velocity.y, playerEntity.body.velocity.z],
+            headingQuat: [playerEntity.headingGroup.quaternion.x, playerEntity.headingGroup.quaternion.y, playerEntity.headingGroup.quaternion.z, playerEntity.headingGroup.quaternion.w],
+            health: playerEntity.health,
+            isWaving: playerEntity.isWaving,
+            isMounted: motorcycleEntity.isMounted,
+            camYaw,
+          },
+          motorcycle: {
+            pos: [motorcycleEntity.body.position.x, motorcycleEntity.body.position.y, motorcycleEntity.body.position.z],
+            quat: [motorcycleEntity.body.quaternion.x, motorcycleEntity.body.quaternion.y, motorcycleEntity.body.quaternion.z, motorcycleEntity.body.quaternion.w],
+            vel: [motorcycleEntity.body.velocity.x, motorcycleEntity.body.velocity.y, motorcycleEntity.body.velocity.z],
+            speed: motorcycleEntity.currentForwardSpeed,
+            yaw: motorcycleEntity.headingYaw,
+          },
+          door: { open: doorEntity.doorOpen, angle: doorEntity.currentAngle },
+          testModelUrl: activeTestModelUrl,
+        };
+        window.localStorage.setItem(QUICKSAVE_KEY, JSON.stringify(snapshot));
+        saveStatus = 'Estado guardado';
+        return true;
+      } catch {
+        saveStatus = 'Error al guardar';
+        return false;
+      }
+    }
+
+    function quickLoad() {
+      try {
+        const raw = window.localStorage.getItem(QUICKSAVE_KEY);
+        if (!raw) {
+          saveStatus = 'Sin guardado previo';
+          return false;
+        }
+        const snap = JSON.parse(raw);
+        if (playerEntity.isRagdoll) playerEntity.recoverFromRagdoll(camYaw);
+        if (motorcycleEntity.isMounted && !snap.player?.isMounted) dismountMotorcycle();
+        if (snap.motorcycle) {
+          const mp = snap.motorcycle.pos, mq = snap.motorcycle.quat, mv = snap.motorcycle.vel;
+          motorcycleEntity.body.position.set(mp[0], mp[1], mp[2]);
+          motorcycleEntity.body.quaternion.set(mq[0], mq[1], mq[2], mq[3]);
+          motorcycleEntity.body.velocity.set(mv[0], mv[1], mv[2]);
+          motorcycleEntity.body.angularVelocity.set(0, 0, 0);
+          motorcycleEntity.currentForwardSpeed = snap.motorcycle.speed ?? 0;
+          motorcycleEntity.headingYaw = snap.motorcycle.yaw ?? 0;
+          motorcycleEntity.wheelieAngle = 0;
+          motorcycleEntity.leanAngle = 0;
+          motorcycleEntity.syncInterpolationBuffers();
+        }
+        if (snap.player) {
+          if (snap.player.isMounted) {
+            if (!motorcycleEntity.isMounted) mountMotorcycle();
+          } else {
+            const pp = snap.player.pos, pv = snap.player.vel, hq = snap.player.headingQuat;
+            playerEntity.body.position.set(pp[0], pp[1], pp[2]);
+            playerEntity.body.velocity.set(pv[0], pv[1], pv[2]);
+            playerEntity.syncInterpolationBuffers();
+            playerEntity.group.position.set(pp[0], pp[1], pp[2]);
+            if (Array.isArray(hq) && hq.length === 4) playerEntity.headingGroup.quaternion.set(hq[0], hq[1], hq[2], hq[3]);
+          }
+          playerEntity.health = snap.player.health ?? 100;
+          playerEntity.isWaving = Boolean(snap.player.isWaving);
+          waveButton.classList.toggle('active', playerEntity.isWaving);
+          camYaw = snap.player.camYaw ?? 0;
+          prevBikeYaw = motorcycleEntity.headingYaw;
+        }
+        if (snap.door) {
+          doorEntity.doorOpen = Boolean(snap.door.open);
+          doorEntity.currentAngle = snap.door.angle ?? (doorEntity.doorOpen ? Math.PI * 0.5 : 0);
+        }
+        if (snap.testModelUrl && snap.testModelUrl !== activeTestModelUrl) loadTestModel(snap.testModelUrl);
+        else if (!snap.testModelUrl && activeTestModelUrl) clearTestModel();
+        saveStatus = 'Estado cargado';
+        return true;
+      } catch {
+        saveStatus = 'Error al cargar';
+        return false;
+      }
+    }
+
+    function handleInteract() {
+      audioManager.unlock();
+      if (isFreeCam) return;
+      if (playerEntity.isRagdoll) {
+        if (playerEntity.canRecoverManually()) playerEntity.recoverFromRagdoll(camYaw);
+        return;
+      }
+      if (motorcycleEntity.isMounted) {
+        dismountMotorcycle();
+        return;
+      }
+      if (interactType === 'motorcycle') mountMotorcycle();
+      else if (interactType === 'door') doorEntity.toggle();
+    }
+
+    btnFreeCam.addEventListener('click', toggleFreeCam);
+    btnSave.addEventListener('click', quickSave);
+    btnLoad.addEventListener('click', quickLoad);
+    btnPause.addEventListener('click', () => TimeManager.togglePause());
+    btnPresetBox.addEventListener('click', () => {
+      const url = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BoxAnimated/glTF-Binary/BoxAnimated.glb';
+      testModelUrlInput.value = url;
+      loadTestModel(url);
+    });
+    btnPresetHelmet.addEventListener('click', () => {
+      const url = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
+      testModelUrlInput.value = url;
+      loadTestModel(url);
+    });
+    btnLoadModel.addEventListener('click', () => loadTestModel(testModelUrlInput.value));
+    btnClearModel.addEventListener('click', clearTestModel);
+
     window.addEventListener('keydown', (e) => {
       audioManager.unlock();
+      const tag = e.target && e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
       keys[e.code] = true;
       if (e.code === 'Space') {
         e.preventDefault();
-        if (!motorcycleEntity.isMounted) jumpQueued = true;
+        if (!isFreeCam) {
+          if (playerEntity.isRagdoll && playerEntity.canRecoverManually()) {
+            playerEntity.recoverFromRagdoll(camYaw);
+          } else if (!motorcycleEntity.isMounted && !playerEntity.isRagdoll) {
+            jumpQueued = true;
+          }
+        }
       }
-      if ((e.code === 'KeyV' || e.code === 'KeyC') && !e.repeat) {
+      if (e.code === 'KeyV' && !e.repeat) {
+        if (isFreeCam) {
+          isFreeCam = false;
+          btnFreeCam.classList.remove('active');
+        }
         if (cameraMode === 'FPS') {
           cameraMode = 'TPS';
           playerEntity.isFpsMode = false;
@@ -1839,8 +3165,13 @@ export function generateStandaloneHtml(): string {
         pitchOffset = 0;
         zoomOffset = 0;
       }
+      if (e.code === 'KeyC' && !e.repeat) toggleFreeCam();
       if (e.code === 'F2' && !e.repeat) {
         e.preventDefault();
+        if (isFreeCam) {
+          isFreeCam = false;
+          btnFreeCam.classList.remove('active');
+        }
         cameraMode = cameraMode === 'TPS' ? 'FPS' : 'TPS';
         playerEntity.isFpsMode = cameraMode === 'FPS';
         if (cameraMode === 'FPS') {
@@ -1854,11 +3185,17 @@ export function generateStandaloneHtml(): string {
       }
       if (e.code === 'KeyP' && !e.repeat) TimeManager.togglePause();
       if (e.code === 'KeyL' && !e.repeat) TimeManager.toggleSlowMotion();
-      if (e.code === 'KeyF' && !e.repeat && !motorcycleEntity.isMounted) {
+      if (e.code === 'KeyF' && !e.repeat && !motorcycleEntity.isMounted && !playerEntity.isRagdoll) {
         playerEntity.isWaving = !playerEntity.isWaving;
         waveButton.classList.toggle('active', playerEntity.isWaving);
       }
       if (e.code === 'KeyE' && !e.repeat) handleInteract();
+      if (e.code === 'KeyG' && !e.repeat) quickSave();
+      if (e.code === 'KeyK' && !e.repeat) quickLoad();
+      if (e.code === 'KeyH' && !e.repeat) {
+        const open = debugPanel.classList.toggle('open');
+        debugToggle.setAttribute('aria-expanded', String(open));
+      }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -1880,7 +3217,10 @@ export function generateStandaloneHtml(): string {
       const dy = e.clientY - lastPointerY;
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
-      if (cameraMode === 'FPS' && motorcycleEntity.isMounted) {
+      if (isFreeCam) {
+        freeCamYaw -= dx * 0.0055;
+        freeCamPitch = THREE.MathUtils.clamp(freeCamPitch - dy * 0.0045, -1.4, 1.4);
+      } else if (cameraMode === 'FPS' && motorcycleEntity.isMounted) {
         fpsLookYawOffset = THREE.MathUtils.clamp(fpsLookYawOffset - dx * 0.0055, -1.25, 1.25);
         fpsPitch = THREE.MathUtils.clamp(fpsPitch - dy * 0.0045, -1.1, 1.0);
       } else if (cameraMode === 'FPS') {
@@ -1905,7 +3245,8 @@ export function generateStandaloneHtml(): string {
       'wheel',
       (e) => {
         e.preventDefault();
-        if (cameraMode === 'TPS') zoomOffset = THREE.MathUtils.clamp(zoomOffset + e.deltaY * 0.004, -1.8, 3.8);
+        if (isFreeCam) freeCamSpeed = THREE.MathUtils.clamp(freeCamSpeed - e.deltaY * 0.01, 2.5, 28);
+        else if (cameraMode === 'TPS') zoomOffset = THREE.MathUtils.clamp(zoomOffset + e.deltaY * 0.004, -1.8, 3.8);
       },
       { passive: false }
     );
@@ -1973,7 +3314,7 @@ export function generateStandaloneHtml(): string {
     waveButton.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!motorcycleEntity.isMounted) {
+      if (!motorcycleEntity.isMounted && !playerEntity.isRagdoll) {
         playerEntity.isWaving = !playerEntity.isWaving;
         waveButton.classList.toggle('active', playerEntity.isWaving);
       }
@@ -2007,11 +3348,23 @@ export function generateStandaloneHtml(): string {
     const clock = new THREE.Clock();
     let lastHudText = '';
     let lastPromptState = '';
+    let fpsFrames = 0;
+    let fpsAccum = 0;
+    let reportedFps = 60;
+    let reportedDrawCalls = 0;
 
     function animate() {
       requestAnimationFrame(animate);
-      const rawDt = Math.min(clock.getDelta(), 0.1);
+      const rawDt = Math.min(clock.getDelta(), 0.05);
       const scaledDt = rawDt * timeScale;
+      fpsFrames += 1;
+      fpsAccum += rawDt;
+      if (fpsAccum >= 0.4) {
+        reportedFps = Math.max(1, Math.round(fpsFrames / fpsAccum));
+        fpsFrames = 0;
+        fpsAccum = 0;
+      }
+      if (boostCooldown > 0) boostCooldown = Math.max(0, boostCooldown - rawDt);
 
       let rawX = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
       let rawZ = (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0) - (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0);
@@ -2020,7 +3373,24 @@ export function generateStandaloneHtml(): string {
         rawZ = joyInput.y;
       }
 
-      if (motorcycleEntity.isMounted) {
+      if (isFreeCam) {
+        driveState.throttle = 0;
+        driveState.steer = 0;
+        steerState.inputMag = 0;
+        steerState.maxSpeed = 0;
+        steerState.jumpQueued = false;
+        jumpQueued = false;
+      } else if (playerEntity.isRagdoll) {
+        driveState.throttle = 0;
+        driveState.steer = 0;
+        steerState.inputMag = 0;
+        steerState.maxSpeed = 0;
+        steerState.jumpQueued = false;
+        if (jumpQueued && playerEntity.canRecoverManually()) {
+          playerEntity.recoverFromRagdoll(camYaw);
+        }
+        jumpQueued = false;
+      } else if (motorcycleEntity.isMounted) {
         driveState.throttle = THREE.MathUtils.clamp(-rawZ, -1, 1);
         driveState.steer = THREE.MathUtils.clamp(-rawX, -1, 1);
         steerState.inputMag = 0;
@@ -2051,14 +3421,22 @@ export function generateStandaloneHtml(): string {
         }
       }
 
-      if (scaledDt > 0) world.step(FIXED_DT, scaledDt, 10);
+      if (scaledDt > 0) world.step(FIXED_DT, scaledDt, 3);
 
       playerEntity.mountedSteerAngle = motorcycleEntity.smoothSteerAngle;
       const alpha = THREE.MathUtils.clamp(world.accumulator / FIXED_DT, 0, 1);
       entityManager.update(scaledDt, alpha);
+      if (activeTestModelMixer && scaledDt > 0) activeTestModelMixer.update(scaledDt);
+      if (!playerEntity.isRagdoll && scaledDt > 0) {
+        triggerSystem.update(
+          motorcycleEntity.isMounted ? 'motorcycle' : 'player',
+          motorcycleEntity.isMounted ? motorcycleEntity.body : playerEntity.body,
+          scaledDt
+        );
+      }
 
       const speedRatio = THREE.MathUtils.clamp(Math.abs(motorcycleEntity.currentForwardSpeed) / VEHICLE_CONFIG.maxForwardSpeed, 0, 1);
-      audioManager.updateEngine(speedRatio, motorcycleEntity.isMounted, TimeManager.isPaused, timeScale);
+      audioManager.updateEngine(speedRatio, motorcycleEntity.isMounted, TimeManager.isPaused, timeScale, driveState.throttle);
 
       const focusPos = motorcycleEntity.isMounted ? motorcycleEntity.interpolatedPosition : playerEntity.interpolatedPosition;
       const focusBaseY = motorcycleEntity.isMounted ? focusPos.y - VEHICLE_CONFIG.boxSize[1] / 2 : focusPos.y - playerEntity.capsuleHalfHeight;
@@ -2070,91 +3448,113 @@ export function generateStandaloneHtml(): string {
         ? Math.abs(motorcycleEntity.currentForwardSpeed)
         : Math.hypot(playerEntity.body.velocity.x, playerEntity.body.velocity.z);
 
-      if (motorcycleEntity.isMounted) {
-        const bikeYaw = motorcycleEntity.headingYaw;
-        const bikeYawDelta = bikeYaw - prevBikeYaw;
-        prevBikeYaw = bikeYaw;
-        if (cameraMode === 'TPS') {
-          camYaw += bikeYawDelta;
-          if (!isDraggingCamera && Math.abs(motorcycleEntity.currentForwardSpeed) > 0.6) {
-            camYaw = dampAngle(camYaw, bikeYaw, 2.2, rawDt);
-          }
-        }
-      }
-
-      if (cameraMode === 'FPS') {
-        playerEntity.getHeadWorldPosition(_headWorldPos);
-        const targetFov = (motorcycleEntity.isMounted ? 78 : 75) + (realHorizSpeed > 6 ? 5.0 : 0);
-        smoothFov = THREE.MathUtils.damp(smoothFov, targetFov, 10, rawDt);
-        if (Math.abs(camera.fov - smoothFov) > 0.02) {
-          camera.fov = smoothFov;
-          camera.updateProjectionMatrix();
-        }
-        const effectiveYaw = motorcycleEntity.isMounted ? motorcycleEntity.headingYaw + fpsLookYawOffset : camYaw;
-        const cosPitch = Math.cos(fpsPitch);
-        const eyeFwd = motorcycleEntity.isMounted ? 0.11 : 0.08;
-        _fpsForwardOffset.set(-Math.sin(effectiveYaw) * eyeFwd, motorcycleEntity.isMounted ? 0.02 : 0.01, -Math.cos(effectiveYaw) * eyeFwd);
-        _currentCamPos.copy(_headWorldPos).add(_fpsForwardOffset);
-        _fpsLookTarget.set(_currentCamPos.x - Math.sin(effectiveYaw) * cosPitch * 10, _currentCamPos.y + Math.sin(fpsPitch) * 10, _currentCamPos.z - Math.cos(effectiveYaw) * cosPitch * 10);
-        _currentLookAt.copy(_fpsLookTarget);
+      if (isFreeCam) {
+        const flySpeed = freeCamSpeed * (keys['ShiftLeft'] || keys['ShiftRight'] ? 2.1 : 1.0);
+        const cosPitch = Math.cos(freeCamPitch);
+        _freeCamDir.set(-Math.sin(freeCamYaw) * cosPitch, Math.sin(freeCamPitch), -Math.cos(freeCamYaw) * cosPitch).normalize();
+        _freeCamRight.set(Math.cos(freeCamYaw), 0, -Math.sin(freeCamYaw));
+        const vertInput = (keys['Space'] ? 1 : 0) - (keys['KeyQ'] || keys['ControlLeft'] || keys['ControlRight'] ? 1 : 0);
+        freeCamPos.addScaledVector(_freeCamDir, -rawZ * flySpeed * rawDt);
+        freeCamPos.addScaledVector(_freeCamRight, rawX * flySpeed * rawDt);
+        freeCamPos.y = Math.max(0.25, freeCamPos.y + vertInput * flySpeed * rawDt);
+        camera.position.copy(freeCamPos);
+        _lookTarget.copy(freeCamPos).add(_freeCamDir);
+        camera.lookAt(_lookTarget);
       } else {
-        const baseDist = motorcycleEntity.isMounted ? Math.max(activePreset.distance, 5.6) : activePreset.distance;
-        smoothDistance = THREE.MathUtils.damp(smoothDistance, THREE.MathUtils.clamp(baseDist + zoomOffset, 2.2, 12.0), 7, rawDt);
-        smoothPitch = THREE.MathUtils.damp(smoothPitch, THREE.MathUtils.clamp(activePreset.pitch + pitchOffset, 0.06, 1.15), 7, rawDt);
-        smoothShoulderX = THREE.MathUtils.damp(smoothShoulderX, motorcycleEntity.isMounted ? 0 : activePreset.shoulderOffsetX, 7, rawDt);
-        smoothTargetHeight = THREE.MathUtils.damp(smoothTargetHeight, motorcycleEntity.isMounted ? 1.25 : activePreset.targetHeight, 7, rawDt);
-        const targetFov = activePreset.fov + (realHorizSpeed > 5.0 ? 6.0 * speedRatio : 0);
-        smoothFov = THREE.MathUtils.damp(smoothFov, targetFov, 7, rawDt);
-        if (Math.abs(camera.fov - smoothFov) > 0.02) {
-          camera.fov = smoothFov;
-          camera.updateProjectionMatrix();
-        }
-        _right.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
-        _lookTarget.set(focusPos.x + _right.x * smoothShoulderX, focusBaseY + smoothTargetHeight, focusPos.z + _right.z * smoothShoulderX);
-        _currentLookAt.x = THREE.MathUtils.damp(_currentLookAt.x, _lookTarget.x, 14, rawDt);
-        _currentLookAt.y = THREE.MathUtils.damp(_currentLookAt.y, _lookTarget.y, 14, rawDt);
-        _currentLookAt.z = THREE.MathUtils.damp(_currentLookAt.z, _lookTarget.z, 14, rawDt);
-
-        const horizDist = smoothDistance * Math.cos(smoothPitch);
-        const vertDist = smoothDistance * Math.sin(smoothPitch);
-        _desiredCamPos.set(_lookTarget.x + Math.sin(camYaw) * horizDist, _lookTarget.y + vertDist, _lookTarget.z + Math.cos(camYaw) * horizDist);
-
-        _rayDir.subVectors(_desiredCamPos, _lookTarget);
-        const desiredRayLen = _rayDir.length();
-        if (desiredRayLen > 0.01) {
-          _rayDir.divideScalar(desiredRayLen);
-          camRaycaster.set(_lookTarget, _rayDir);
-          camRaycaster.near = 0.2;
-          camRaycaster.far = desiredRayLen;
-          const hits = camRaycaster.intersectObjects(cameraColliders, false);
-          if (hits.length > 0) {
-            const safeDist = Math.max(0.8, hits[0].distance - 0.35);
-            _desiredCamPos.copy(_lookTarget).addScaledVector(_rayDir, safeDist);
+        if (motorcycleEntity.isMounted) {
+          const bikeYaw = motorcycleEntity.headingYaw;
+          const bikeYawDelta = bikeYaw - prevBikeYaw;
+          prevBikeYaw = bikeYaw;
+          if (cameraMode === 'TPS') {
+            camYaw += bikeYawDelta * 0.88;
+            if (!isDraggingCamera && Math.abs(motorcycleEntity.currentForwardSpeed) > 0.5) {
+              camYaw = dampAngle(camYaw, bikeYaw, 2.8, rawDt);
+            }
           }
         }
-        _desiredCamPos.y = Math.max(0.38, _desiredCamPos.y);
-        const followLambda = motorcycleEntity.isMounted ? 12.0 : 9.5;
-        _currentCamPos.x = THREE.MathUtils.damp(_currentCamPos.x, _desiredCamPos.x, followLambda, rawDt);
-        _currentCamPos.y = THREE.MathUtils.damp(_currentCamPos.y, _desiredCamPos.y, followLambda, rawDt);
-        _currentCamPos.z = THREE.MathUtils.damp(_currentCamPos.z, _desiredCamPos.z, followLambda, rawDt);
-        _currentCamPos.y = Math.max(0.35, _currentCamPos.y);
+
+        if (cameraMode === 'FPS') {
+          playerEntity.getHeadWorldPosition(_headWorldPos);
+          const targetFov = (motorcycleEntity.isMounted ? 80 : 75) + (realHorizSpeed > 6 ? 6.5 * speedRatio : 0);
+          smoothFov = THREE.MathUtils.damp(smoothFov, targetFov, 10, rawDt);
+          if (Math.abs(camera.fov - smoothFov) > 0.02) {
+            camera.fov = smoothFov;
+            camera.updateProjectionMatrix();
+          }
+          const effectiveYaw = motorcycleEntity.isMounted ? motorcycleEntity.headingYaw + fpsLookYawOffset : camYaw;
+          const cosPitch = Math.cos(fpsPitch);
+          const eyeFwd = motorcycleEntity.isMounted ? 0.14 : 0.08;
+          _fpsForwardOffset.set(-Math.sin(effectiveYaw) * eyeFwd, motorcycleEntity.isMounted ? 0.04 : 0.01, -Math.cos(effectiveYaw) * eyeFwd);
+          _currentCamPos.copy(_headWorldPos).add(_fpsForwardOffset);
+          _fpsLookTarget.set(_currentCamPos.x - Math.sin(effectiveYaw) * cosPitch * 10, _currentCamPos.y + Math.sin(fpsPitch) * 10, _currentCamPos.z - Math.cos(effectiveYaw) * cosPitch * 10);
+          _currentLookAt.copy(_fpsLookTarget);
+        } else {
+          let gtaLagDistOffset = 0;
+          if (motorcycleEntity.isMounted) {
+            if (driveState.throttle > 0.05) gtaLagDistOffset = 0.95 * driveState.throttle * (0.35 + 0.65 * speedRatio);
+            else if (driveState.throttle < -0.05 && motorcycleEntity.currentForwardSpeed > 0.8) gtaLagDistOffset = -0.7 * Math.abs(driveState.throttle) * speedRatio;
+          }
+          const baseDist = motorcycleEntity.isMounted ? Math.max(activePreset.distance, 5.2) + gtaLagDistOffset : activePreset.distance;
+          smoothDistance = THREE.MathUtils.damp(smoothDistance, THREE.MathUtils.clamp(baseDist + zoomOffset, 2.2, 12.5), 5.5, rawDt);
+          smoothPitch = THREE.MathUtils.damp(smoothPitch, THREE.MathUtils.clamp(activePreset.pitch + pitchOffset, 0.06, 1.15), 7, rawDt);
+          smoothShoulderX = THREE.MathUtils.damp(smoothShoulderX, motorcycleEntity.isMounted ? 0 : activePreset.shoulderOffsetX, 7, rawDt);
+          smoothTargetHeight = THREE.MathUtils.damp(smoothTargetHeight, motorcycleEntity.isMounted ? 1.18 : activePreset.targetHeight, 7, rawDt);
+          const targetFov = activePreset.fov + (realHorizSpeed > 4.0 ? 7.5 * speedRatio : 0);
+          smoothFov = THREE.MathUtils.damp(smoothFov, targetFov, 6.5, rawDt);
+          if (Math.abs(camera.fov - smoothFov) > 0.02) {
+            camera.fov = smoothFov;
+            camera.updateProjectionMatrix();
+          }
+          _right.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
+          _lookTarget.set(focusPos.x + _right.x * smoothShoulderX, focusBaseY + smoothTargetHeight, focusPos.z + _right.z * smoothShoulderX);
+          _currentLookAt.x = THREE.MathUtils.damp(_currentLookAt.x, _lookTarget.x, 12, rawDt);
+          _currentLookAt.y = THREE.MathUtils.damp(_currentLookAt.y, _lookTarget.y, 12, rawDt);
+          _currentLookAt.z = THREE.MathUtils.damp(_currentLookAt.z, _lookTarget.z, 12, rawDt);
+
+          const horizDist = smoothDistance * Math.cos(smoothPitch);
+          const vertDist = smoothDistance * Math.sin(smoothPitch);
+          _desiredCamPos.set(_lookTarget.x + Math.sin(camYaw) * horizDist, _lookTarget.y + vertDist, _lookTarget.z + Math.cos(camYaw) * horizDist);
+
+          _rayDir.subVectors(_desiredCamPos, _lookTarget);
+          const desiredRayLen = _rayDir.length();
+          if (desiredRayLen > 0.01) {
+            _rayDir.divideScalar(desiredRayLen);
+            camRaycaster.set(_lookTarget, _rayDir);
+            camRaycaster.near = 0.2;
+            camRaycaster.far = desiredRayLen;
+            const hits = camRaycaster.intersectObjects(cameraColliders, false);
+            if (hits.length > 0) {
+              const safeDist = Math.max(0.8, hits[0].distance - 0.35);
+              _desiredCamPos.copy(_lookTarget).addScaledVector(_rayDir, safeDist);
+            }
+          }
+          _desiredCamPos.y = Math.max(0.38, _desiredCamPos.y);
+          const followLambda = motorcycleEntity.isMounted ? 6.6 : 9.5;
+          _currentCamPos.x = THREE.MathUtils.damp(_currentCamPos.x, _desiredCamPos.x, followLambda, rawDt);
+          _currentCamPos.y = THREE.MathUtils.damp(_currentCamPos.y, _desiredCamPos.y, followLambda, rawDt);
+          _currentCamPos.z = THREE.MathUtils.damp(_currentCamPos.z, _desiredCamPos.z, followLambda, rawDt);
+          _currentCamPos.y = Math.max(0.35, _currentCamPos.y);
+        }
+
+        _shakeOffset.set(0, 0, 0);
+        if (shakeTimer > 0) {
+          if (!TimeManager.isPaused) shakeTimer = Math.max(0, shakeTimer - rawDt);
+          const decay = shakeDuration > 0 ? shakeTimer / shakeDuration : 0;
+          const mag = shakeIntensity * decay;
+          _shakeOffset.set((Math.random() * 2 - 1) * mag, (Math.random() * 2 - 1) * mag * 0.85, (Math.random() * 2 - 1) * mag);
+          if (shakeTimer === 0) shakeIntensity = 0;
+        }
+
+        camera.position.copy(_currentCamPos).add(_shakeOffset);
+        camera.lookAt(_currentLookAt);
       }
 
-      _shakeOffset.set(0, 0, 0);
-      if (shakeTimer > 0) {
-        if (!TimeManager.isPaused) shakeTimer = Math.max(0, shakeTimer - rawDt);
-        const decay = shakeDuration > 0 ? shakeTimer / shakeDuration : 0;
-        const mag = shakeIntensity * decay;
-        _shakeOffset.set((Math.random() * 2 - 1) * mag, (Math.random() * 2 - 1) * mag * 0.85, (Math.random() * 2 - 1) * mag);
-        if (shakeTimer === 0) shakeIntensity = 0;
-      }
-
-      camera.position.copy(_currentCamPos).add(_shakeOffset);
-      camera.lookAt(_currentLookAt);
-
-      if (motorcycleEntity.isMounted) {
+      if (isFreeCam || playerEntity.isRagdoll) {
+        interactType = null;
+        interactPromptText = null;
+      } else if (motorcycleEntity.isMounted) {
         interactType = 'dismount';
-        interactPromptText = 'Presiona E para bajar de la moto';
+        interactPromptText = 'Presiona E';
       } else {
         _playerRayOrigin.set(playerEntity.interpolatedPosition.x, focusBaseY + 1.15, playerEntity.interpolatedPosition.z);
         const hit = engineRaycaster.castFromCameraCenter(camera, allInteractTargets, VEHICLE_CONFIG.interactDistance, _playerRayOrigin);
@@ -2163,10 +3563,10 @@ export function generateStandaloneHtml(): string {
           const distToPlayer = hit.point.distanceTo(_playerRayOrigin);
           if (hitType === 'motorcycle' && distToPlayer <= VEHICLE_CONFIG.interactDistance) {
             interactType = 'motorcycle';
-            interactPromptText = 'Presiona E para subir a la moto';
+            interactPromptText = 'Presiona E';
           } else if (hitType === 'door' && distToPlayer <= DOOR_CONFIG.interactDistance) {
             interactType = 'door';
-            interactPromptText = doorEntity.doorOpen ? 'Presiona E para cerrar la puerta' : 'Presiona E para abrir la puerta';
+            interactPromptText = 'Presiona E';
           } else {
             interactType = null;
             interactPromptText = null;
@@ -2177,11 +3577,14 @@ export function generateStandaloneHtml(): string {
         }
       }
 
+      renderer.render(scene, camera);
+      reportedDrawCalls = renderer.info.render.calls;
+
       const speedKmh = Math.round(Math.abs(motorcycleEntity.currentForwardSpeed) * 3.6);
-      const viewText = cameraMode === 'FPS' ? 'Primera Persona (FPS)' : activePreset.label;
+      speedValueEl.textContent = String(speedKmh);
+      const viewText = isFreeCam ? 'Free-Cam' : cameraMode === 'FPS' ? 'FPS' : activePreset.label;
       const timeText = timeScale === 0 ? 'PAUSA' : timeScale + 'x';
-      const mountText = motorcycleEntity.isMounted ? \` · Moto: \${speedKmh} km/h\` : '';
-      const nextHudText = \`Estado: \${playerEntity.stateLabel}\${playerEntity.isWaving ? ' + Wave' : ''}\${mountText} · HP: \${playerEntity.health} · Vista: \${viewText} · Tiempo: \${timeText}\`;
+      const nextHudText = \`Animación: \${playerEntity.stateLabel}\${playerEntity.isWaving ? ' + Wave' : ''}\\nSuelo: \${playerEntity.isGrounded ? 'En suelo' : 'En aire'}\\nSalud: HP \${playerEntity.health}\\nMoto: \${motorcycleEntity.isMounted ? 'Montado (' + speedKmh + ' km/h)' : 'Estacionada'}\\nCámara: \${viewText}\\nTiempo: \${timeText}\\nRendimiento: \${reportedFps} FPS · \${reportedDrawCalls} draws\${lastTriggerLabel ? '\\nTrigger: ' + lastTriggerLabel : ''}\${saveStatus ? '\\nGuardado: ' + saveStatus : ''}\`;
       if (nextHudText !== lastHudText) {
         lastHudText = nextHudText;
         stateReadout.textContent = nextHudText;
@@ -2191,15 +3594,12 @@ export function generateStandaloneHtml(): string {
       if (promptKey !== lastPromptState) {
         lastPromptState = promptKey;
         interactPromptEl.classList.toggle('visible', Boolean(interactPromptText));
-        if (interactPromptText) interactPromptEl.textContent = interactPromptText;
         crosshair.classList.toggle('active', interactType === 'door' || interactType === 'motorcycle');
         interactButton.classList.toggle('visible', Boolean(interactPromptText));
         interactButton.textContent = motorcycleEntity.isMounted ? 'BAJAR (E)' : 'USAR (E)';
         waveButton.style.display = motorcycleEntity.isMounted ? 'none' : 'flex';
         jumpButton.style.display = motorcycleEntity.isMounted ? 'none' : 'flex';
       }
-
-      renderer.render(scene, camera);
     }
 
     animate();
