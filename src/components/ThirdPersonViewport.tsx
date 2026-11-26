@@ -9,7 +9,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as CANNON from 'cannon-es';
 import {
   CAMERA_VIEWS,
@@ -24,11 +23,24 @@ import {
 import { Entity, EntityManager } from '../engine/EntityManager';
 import { TimeManager } from '../engine/TimeManager';
 import { AudioManager } from '../engine/AudioManager';
-import { DEFAULT_LEVEL_JSON, LevelJSON } from '../engine/levelData';
+import { modelCacheManager } from '../engine/ModelCacheManager';
+import {
+  buildOptimizedHondaRig,
+  createHondaMasterMaterials,
+  HondaOptStats,
+  resolveHondaPartVisual,
+} from '../engine/hondaOptimizer';
+import {
+  BUILTIN_MAPS,
+  MapDoorJSON,
+  normalizeMapJSON,
+  NormalizedMapJSON,
+} from '../engine/levelData';
 
 export type CharacterAnimState = 'Idle' | 'Walk' | 'Run' | 'Jump' | 'Drive' | 'Ragdoll';
 export type CameraMode = 'TPS' | 'FPS';
 export type InteractTargetType = 'door' | 'motorcycle' | 'dismount' | null;
+export type QualityPreset = 'low' | 'medium' | 'high';
 
 export interface TestModelLoadOptions {
   position?: [number, number, number];
@@ -42,12 +54,41 @@ export interface TriggerConfig {
   label: string;
   position: [number, number, number];
   size: [number, number, number];
-  color?: number;
+  color?: number | string;
   once?: boolean;
   visible?: boolean;
   onEnter?: (ctx: { actorType: 'player' | 'motorcycle'; body: CANNON.Body }) => void;
   onStay?: (ctx: { actorType: 'player' | 'motorcycle'; body: CANNON.Body }, dt: number) => void;
   onExit?: (ctx: { actorType: 'player' | 'motorcycle' }) => void;
+}
+
+export interface ViewportStateSnapshot {
+  animState: CharacterAnimState;
+  grounded: boolean;
+  viewLabel: string;
+  cameraMode: CameraMode;
+  freeCam: boolean;
+  timeScale: number;
+  health: number;
+  isWaving: boolean;
+  isMounted: boolean;
+  vehicleSpeedKmh: number;
+  interactPrompt: string | null;
+  interactType: InteractTargetType;
+  doorOpen: boolean;
+  hondaParts: string[];
+  fps: number;
+  drawCalls: number;
+  triangles: number;
+  hondaOptStats: HondaOptStats | null;
+  modelCacheStatus: string;
+  qualityPreset: QualityPreset;
+  activeMapName: string;
+  playerXYZ: [number, number, number];
+  camXYZ: [number, number, number];
+  lastTrigger: string | null;
+  saveStatus: string | null;
+  testModelStatus: string | null;
 }
 
 export interface ThirdPersonViewportHandle {
@@ -65,35 +106,26 @@ export interface ThirdPersonViewportHandle {
   quickLoad: () => boolean;
   loadTestModel: (url: string, options?: TestModelLoadOptions) => void;
   clearTestModel: () => void;
+  loadMapFromJSON: (mapData: unknown) => { ok: boolean; error?: string; name?: string };
+  setQualityPreset: (preset: QualityPreset) => void;
+  clearModelCache: () => Promise<void>;
+  getPositionCopyPayload: () => {
+    playerPos: [number, number, number];
+    camPos: [number, number, number];
+    colliderJson: string;
+  };
 }
 
 interface ThirdPersonViewportProps {
   onLoadProgress: (progress: number, loaded: boolean, error: string | null) => void;
-  onStateChange: (state: {
-    animState: CharacterAnimState;
-    grounded: boolean;
-    viewLabel: string;
-    cameraMode: CameraMode;
-    freeCam: boolean;
-    timeScale: number;
-    health: number;
-    isWaving: boolean;
-    isMounted: boolean;
-    vehicleSpeedKmh: number;
-    interactPrompt: string | null;
-    interactType: InteractTargetType;
-    doorOpen: boolean;
-    hondaParts: string[];
-    fps: number;
-    drawCalls: number;
-    lastTrigger: string | null;
-    saveStatus: string | null;
-    testModelStatus: string | null;
-  }) => void;
+  onStateChange: (state: ViewportStateSnapshot) => void;
   onContextLostChange?: (lost: boolean) => void;
+  initialMap?: unknown;
+  initialQuality?: QualityPreset;
+  cameraSensitivity?: number;
+  audioVolume?: number;
 }
 
-// Unified EngineRaycaster casting from the center of the camera
 class EngineRaycaster {
   private raycaster = new THREE.Raycaster();
   private centerNDC = new THREE.Vector2(0, 0);
@@ -139,6 +171,9 @@ const _fpsForwardOffset = new THREE.Vector3();
 const _shakeOffset = new THREE.Vector3();
 const _bikeFwd = new THREE.Vector3();
 const _bikeRight = new THREE.Vector3();
+const _bikeUp = new THREE.Vector3();
+const _bikeFwdHoriz = new THREE.Vector3();
+const _bikeRightHoriz = new THREE.Vector3();
 const _bikeQuat = new THREE.Quaternion();
 const _bikeEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _dismountOffset = new THREE.Vector3();
@@ -146,6 +181,14 @@ const _rayFrom = new CANNON.Vec3();
 const _rayTo = new CANNON.Vec3();
 const _cannonYAxis = new CANNON.Vec3(0, 1, 0);
 const _forceVec = new CANNON.Vec3();
+const _torqueVec = new CANNON.Vec3();
+const _hubLocal = new THREE.Vector3();
+const _hubWorld = new THREE.Vector3();
+const _hubRel = new CANNON.Vec3();
+const _wheelPt = new CANNON.Vec3();
+const _wheelVel = new CANNON.Vec3();
+const _zeroRelVec = new CANNON.Vec3(0, 0, 0);
+const _hitNormal = new THREE.Vector3();
 const _forkSteerAxis = new THREE.Vector3(0, Math.cos(0.39), Math.sin(0.39)).normalize();
 const _ragInvQuat = new THREE.Quaternion();
 const _ragLocalDir = new THREE.Vector3();
@@ -159,24 +202,13 @@ const _wipeoutInheritVel = new THREE.Vector3();
 const _wipeoutEjectVel = new THREE.Vector3();
 const _dismountPos = new THREE.Vector3();
 const _tmpBox3A = new THREE.Box3();
-const _tmpBox3B = new THREE.Box3();
 const _tmpVec3A = new THREE.Vector3();
 const _tmpVec3B = new THREE.Vector3();
-const _tmpVec3C = new THREE.Vector3();
-const _tmpVec3D = new THREE.Vector3();
-const _tmpMat4A = new THREE.Matrix4();
-const _tmpMat4B = new THREE.Matrix4();
-const _tmpMat4C = new THREE.Matrix4();
-const _tmpMat4D = new THREE.Matrix4();
-const _tmpMat4E = new THREE.Matrix4();
-const _tmpMat3A = new THREE.Matrix3();
-const _ragPartPos = new THREE.Vector3();
 const _freeCamDir = new THREE.Vector3();
 const _freeCamRight = new THREE.Vector3();
 const _freeCamEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 const QUICKSAVE_STORAGE_KEY = 'engine3d_quicksave_v1';
-
 const UPPER_BODY_MASK_REGEX = /spine|neck|head|shoulder|arm|forearm|hand/i;
 
 interface BoneRigEntry {
@@ -226,6 +258,14 @@ function detectSoftwareWebGL(): boolean {
   const gpu = String(gl.getParameter(param));
   gl.getExtension('WEBGL_lose_context')?.loseContext();
   return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
+}
+
+function detectTouchCapable(): boolean {
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  );
 }
 
 function dampAngle(current: number, target: number, lambda: number, dt: number): number {
@@ -284,10 +324,10 @@ function buildCharacterBoneRig(model: THREE.Object3D): CharacterBoneRig {
   const leftUpLeg = findExact(['leftupleg', 'leftthigh', 'thighl', 'upperlegl']);
   const rightUpLeg = findExact(['rightupleg', 'rightthigh', 'thighr', 'upperlegr']);
   const leftLeg =
-    bones.find((b) => (b.norm === 'leftleg' || b.norm === 'leftcalf' || b.norm === 'shinl'))?.bone ??
+    bones.find((b) => b.norm === 'leftleg' || b.norm === 'leftcalf' || b.norm === 'shinl')?.bone ??
     bones.find((b) => (b.norm.includes('leftleg') || b.norm.includes('leftcalf')) && !b.norm.includes('upleg'))?.bone;
   const rightLeg =
-    bones.find((b) => (b.norm === 'rightleg' || b.norm === 'rightcalf' || b.norm === 'shinr'))?.bone ??
+    bones.find((b) => b.norm === 'rightleg' || b.norm === 'rightcalf' || b.norm === 'shinr')?.bone ??
     bones.find((b) => (b.norm.includes('rightleg') || b.norm.includes('rightcalf')) && !b.norm.includes('upleg'))?.bone;
   const leftFoot = findExact(['leftfoot', 'footl']);
   const rightFoot = findExact(['rightfoot', 'footr']);
@@ -526,7 +566,6 @@ function applyMotorcycleSeatedPose(
   steerAngle: number,
   fallbackHeadingGroup?: THREE.Group
 ) {
-  // Fallback seguro si el rig no tiene huesos nombrados
   if (!rig.leftArm && !rig.rightArm && !rig.leftUpLeg && !rig.rightUpLeg) {
     if (fallbackHeadingGroup) {
       fallbackHeadingGroup.rotation.x = -0.18;
@@ -542,13 +581,11 @@ function applyMotorcycleSeatedPose(
     return;
   }
 
-  // Postura simétrica desde TPose: torso inclinado hacia el tanque (-X), cabeza nivelada al frente
   applyBoneEulerDelta(rig.spine, -0.26, steerAngle * 0.08, 0);
   applyBoneEulerDelta(rig.spine1, -0.18, 0, 0);
   applyBoneEulerDelta(rig.spine2, -0.12, 0, 0);
   applyBoneEulerDelta(rig.head, 0.42, steerAngle * 0.08, 0);
 
-  // Piernas abiertas rodeando el depósito y rodillas flexionadas hacia las estriberas
   applyBoneEulerDelta(rig.leftUpLeg, 0.96, 0, -0.28);
   applyBoneEulerDelta(rig.rightUpLeg, 0.96, 0, 0.28);
   applyBoneEulerDelta(rig.leftLeg, -1.62, 0, 0);
@@ -556,7 +593,6 @@ function applyMotorcycleSeatedPose(
   applyBoneEulerDelta(rig.leftFoot, 0.28, 0, 0);
   applyBoneEulerDelta(rig.rightFoot, 0.28, 0, 0);
 
-  // Ambos brazos orientados simétricamente hacia adelante (-Z) y abajo hasta los puños del manubrio
   const steerYaw = steerAngle * 0.16;
   const steerPitch = steerAngle * 0.12;
   applyBoneEulerDelta(rig.leftArm, -steerPitch, -1.24 + steerYaw, 0.18);
@@ -646,7 +682,6 @@ interface ProceduralMotorcycleRig {
   frontForkPivot: THREE.Group;
   frontWheelSpin: THREE.Group;
   rearWheelSpin: THREE.Group;
-  interactMeshes: THREE.Object3D[];
 }
 
 function buildProceduralMotorcycle(
@@ -654,7 +689,6 @@ function buildProceduralMotorcycle(
   disposableMaterials: THREE.Material[]
 ): ProceduralMotorcycleRig {
   const visualRoot = new THREE.Group();
-  const interactMeshes: THREE.Object3D[] = [];
 
   const frameMat = new THREE.MeshStandardMaterial({
     color: 0x1e293b,
@@ -716,73 +750,48 @@ function buildProceduralMotorcycle(
     return g;
   };
 
-  const tagMesh = (mesh: THREE.Mesh) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+  const tagMesh = (mesh: THREE.Mesh, cast = false) => {
+    mesh.castShadow = cast;
+    mesh.receiveShadow = cast;
     mesh.userData.interactType = 'motorcycle';
-    interactMeshes.push(mesh);
     return mesh;
   };
 
-  const boxHalfY = VEHICLE_CONFIG.boxSize[1] / 2; // 0.47
-  const wheelR = VEHICLE_CONFIG.wheelRadius; // 0.31
-  const axleY = -boxHalfY + wheelR; // -0.16 (tires touch -0.47 exactly)
+  const boxHalfY = VEHICLE_CONFIG.boxSize[1] / 2;
+  const wheelR = VEHICLE_CONFIG.wheelRadius;
+  const axleY = -boxHalfY + wheelR;
 
   const createWheel = (width: number) => {
     const wheelGroup = new THREE.Group();
     const tireGeo = trackGeo(new THREE.TorusGeometry(wheelR - 0.065, 0.068, 12, 26));
     tireGeo.rotateY(Math.PI / 2);
-    const tire = tagMesh(new THREE.Mesh(tireGeo, tireMat));
-    wheelGroup.add(tire);
+    wheelGroup.add(tagMesh(new THREE.Mesh(tireGeo, tireMat), false));
 
     const rimGeo = trackGeo(new THREE.CylinderGeometry(wheelR - 0.11, wheelR - 0.11, width * 0.75, 16));
     rimGeo.rotateZ(Math.PI / 2);
-    const rim = tagMesh(new THREE.Mesh(rimGeo, alloyMat));
-    wheelGroup.add(rim);
+    wheelGroup.add(tagMesh(new THREE.Mesh(rimGeo, alloyMat), false));
 
-    // Radios visibles para apreciar el giro de la rueda
     const spokeGeo = trackGeo(new THREE.BoxGeometry(width * 0.8, 0.025, (wheelR - 0.1) * 1.9));
     for (let s = 0; s < 3; s++) {
-      const spoke = tagMesh(new THREE.Mesh(spokeGeo, frameMat));
+      const spoke = tagMesh(new THREE.Mesh(spokeGeo, frameMat), false);
       spoke.rotation.x = (s * Math.PI) / 3;
       wheelGroup.add(spoke);
     }
-
-    const discGeo = trackGeo(new THREE.CylinderGeometry(0.14, 0.14, 0.02, 16));
-    discGeo.rotateZ(Math.PI / 2);
-    const disc = tagMesh(new THREE.Mesh(discGeo, alloyMat));
-    disc.position.x = width * 0.44;
-    wheelGroup.add(disc);
-
     return wheelGroup;
   };
 
-  // Rueda trasera (+Z)
   const rearWheelSpin = createWheel(0.16);
   rearWheelSpin.position.set(0, axleY, 0.7);
   visualRoot.add(rearWheelSpin);
 
-  // Chasis, motor y basculante trasero
-  const engineBlock = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.32, 0.34, 0.46)), frameMat)
-  );
+  const engineBlock = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.32, 0.34, 0.46)), frameMat), true);
   engineBlock.position.set(0, axleY + 0.22, -0.02);
   visualRoot.add(engineBlock);
 
-  const swingarm = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 0.07, 0.66)), alloyMat)
-  );
+  const swingarm = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 0.07, 0.66)), alloyMat));
   swingarm.position.set(0, axleY + 0.06, 0.4);
   visualRoot.add(swingarm);
 
-  const rearShock = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.032, 0.032, 0.34, 10)), bodyPaintMat)
-  );
-  rearShock.position.set(0, axleY + 0.24, 0.34);
-  rearShock.rotation.x = 0.55;
-  visualRoot.add(rearShock);
-
-  // Escape lateral cromado
   const exhaustGeo = trackGeo(new THREE.CylinderGeometry(0.038, 0.048, 0.84, 12));
   exhaustGeo.rotateX(Math.PI / 2);
   const exhaust = tagMesh(new THREE.Mesh(exhaustGeo, alloyMat));
@@ -790,44 +799,25 @@ function buildProceduralMotorcycle(
   exhaust.rotation.x = -0.12;
   visualRoot.add(exhaust);
 
-  // Depósito de combustible esculpido
-  const tank = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.36, 0.24, 0.52)), bodyPaintMat)
-  );
+  const tank = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.36, 0.24, 0.52)), bodyPaintMat), true);
   tank.position.set(0, axleY + 0.48, -0.18);
   tank.rotation.x = 0.14;
   visualRoot.add(tank);
 
-  // Asiento ergonómico
-  const seat = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.29, 0.11, 0.54)), seatMat)
-  );
+  const seat = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.29, 0.11, 0.54)), seatMat), true);
   seat.position.set(0, axleY + 0.43, 0.25);
   seat.rotation.x = -0.05;
   visualRoot.add(seat);
 
-  // Colín y luz trasera
-  const tailBody = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 0.12, 0.38)), bodyPaintMat)
-  );
+  const tailBody = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 0.12, 0.38)), bodyPaintMat));
   tailBody.position.set(0, axleY + 0.46, 0.62);
   tailBody.rotation.x = -0.18;
   visualRoot.add(tailBody);
 
-  const tailLight = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.14, 0.05, 0.05)), tailLightMat)
-  );
+  const tailLight = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.14, 0.05, 0.05)), tailLightMat));
   tailLight.position.set(0, axleY + 0.48, 0.81);
   visualRoot.add(tailLight);
 
-  // Estriberas (footpegs)
-  const pegGeo = trackGeo(new THREE.CylinderGeometry(0.018, 0.018, 0.44, 8));
-  pegGeo.rotateZ(Math.PI / 2);
-  const footPegs = tagMesh(new THREE.Mesh(pegGeo, alloyMat));
-  footPegs.position.set(0, axleY + 0.08, 0.12);
-  visualRoot.add(footPegs);
-
-  // Conjunto delantero dirigible (horquilla + manubrio + faro + rueda delantera)
   const frontForkPivot = new THREE.Group();
   frontForkPivot.position.set(0, axleY + 0.46, -0.46);
   visualRoot.add(frontForkPivot);
@@ -843,22 +833,11 @@ function buildProceduralMotorcycle(
   rightFork.rotation.x = 0.38;
   frontForkPivot.add(rightFork);
 
-  const frontFender = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 0.05, 0.36)), bodyPaintMat)
-  );
-  frontFender.position.set(0, -0.24, -0.25);
-  frontFender.rotation.x = 0.25;
-  frontForkPivot.add(frontFender);
-
-  // Rueda delantera relativa al pivote de horquilla
   const frontWheelSpin = createWheel(0.13);
   frontWheelSpin.position.set(0, -0.46, -0.24);
   frontForkPivot.add(frontWheelSpin);
 
-  // Manubrio ancho + puños + tablero digital (visible en FPS)
-  const handlebarCross = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.018, 0.018, 0.68, 10)), alloyMat)
-  );
+  const handlebarCross = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.018, 0.018, 0.68, 10)), alloyMat));
   handlebarCross.rotation.z = Math.PI / 2;
   handlebarCross.position.set(0, 0.19, 0.05);
   frontForkPivot.add(handlebarCross);
@@ -875,16 +854,12 @@ function buildProceduralMotorcycle(
   rightGrip.rotation.y = -0.14;
   frontForkPivot.add(rightGrip);
 
-  const dashPod = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 0.07, 0.08)), dashMat)
-  );
+  const dashPod = tagMesh(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 0.07, 0.08)), dashMat));
   dashPod.position.set(0, 0.22, -0.06);
   dashPod.rotation.x = -0.55;
   frontForkPivot.add(dashPod);
 
-  const headlight = tagMesh(
-    new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.09, 0.09, 0.09, 16)), headlightMat)
-  );
+  const headlight = tagMesh(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.09, 0.09, 0.09, 16)), headlightMat));
   headlight.rotation.x = Math.PI / 2;
   headlight.position.set(0, 0.07, -0.14);
   frontForkPivot.add(headlight);
@@ -894,328 +869,9 @@ function buildProceduralMotorcycle(
     frontForkPivot,
     frontWheelSpin,
     rearWheelSpin,
-    interactMeshes,
   };
 }
 
-interface HondaMaterialPalette {
-  tireMat: THREE.MeshStandardMaterial;
-  chromeMat: THREE.MeshStandardMaterial;
-  engineMat: THREE.MeshStandardMaterial;
-  frameMat: THREE.MeshStandardMaterial;
-  bodyworkMat: THREE.MeshStandardMaterial;
-  seatMat: THREE.MeshStandardMaterial;
-  headlightMat: THREE.MeshStandardMaterial;
-  tailLightMat: THREE.MeshStandardMaterial;
-  indicatorMat: THREE.MeshStandardMaterial;
-  neutralMat: THREE.MeshStandardMaterial;
-}
-
-function createHondaMaterialPalette(
-  disposableMaterials: THREE.Material[]
-): HondaMaterialPalette {
-  const tireMat = new THREE.MeshStandardMaterial({
-    color: 0x18181b,
-    roughness: 0.88,
-    metalness: 0.05,
-  });
-  const chromeMat = new THREE.MeshStandardMaterial({
-    color: 0xe5e7eb,
-    metalness: 1.0,
-    roughness: 0.18,
-  });
-  const engineMat = new THREE.MeshStandardMaterial({
-    color: 0x3f3f46,
-    metalness: 0.75,
-    roughness: 0.42,
-  });
-  const frameMat = new THREE.MeshStandardMaterial({
-    color: 0x111827,
-    metalness: 0.35,
-    roughness: 0.28,
-  });
-  const bodyworkMat = new THREE.MeshStandardMaterial({
-    color: 0x991b1b,
-    metalness: 0.45,
-    roughness: 0.24,
-  });
-  const seatMat = new THREE.MeshStandardMaterial({
-    color: 0x18181b,
-    roughness: 0.82,
-    metalness: 0.06,
-  });
-  const headlightMat = new THREE.MeshStandardMaterial({
-    color: 0xfffbeb,
-    emissive: 0xfef3c7,
-    emissiveIntensity: 1.8,
-    roughness: 0.16,
-    metalness: 0.1,
-  });
-  const tailLightMat = new THREE.MeshStandardMaterial({
-    color: 0xef4444,
-    emissive: 0xdc2626,
-    emissiveIntensity: 1.8,
-    roughness: 0.2,
-    metalness: 0.1,
-  });
-  const indicatorMat = new THREE.MeshStandardMaterial({
-    color: 0xf59e0b,
-    emissive: 0xd97706,
-    emissiveIntensity: 1.15,
-    roughness: 0.24,
-    metalness: 0.15,
-  });
-  const neutralMat = new THREE.MeshStandardMaterial({
-    color: 0x6b7280,
-    roughness: 0.6,
-    metalness: 0.2,
-  });
-
-  disposableMaterials.push(
-    tireMat,
-    chromeMat,
-    engineMat,
-    frameMat,
-    bodyworkMat,
-    seatMat,
-    headlightMat,
-    tailLightMat,
-    indicatorMat,
-    neutralMat
-  );
-
-  return {
-    tireMat,
-    chromeMat,
-    engineMat,
-    frameMat,
-    bodyworkMat,
-    seatMat,
-    headlightMat,
-    tailLightMat,
-    indicatorMat,
-    neutralMat,
-  };
-}
-
-function getCachedHondaMaterialPalette(
-  cacheRef: { current: HondaMaterialPalette | null },
-  disposableMaterials: THREE.Material[]
-): HondaMaterialPalette {
-  if (cacheRef.current) return cacheRef.current;
-  cacheRef.current = createHondaMaterialPalette(disposableMaterials);
-  return cacheRef.current;
-}
-
-function resolveHondaPartMaterial(
-  meshName: string,
-  matName: string,
-  palette: HondaMaterialPalette
-): { material: THREE.MeshStandardMaterial; category: string } {
-  const combined = `${meshName} ${matName}`.toLowerCase();
-
-  if (
-    combined.includes('stop') ||
-    combined.includes('tail') ||
-    combined.includes('rear')
-  ) {
-    return { material: palette.tailLightMat, category: 'stop-emisivo' };
-  }
-  if (
-    combined.includes('fanale') ||
-    combined.includes('headlight') ||
-    combined.includes('light') ||
-    combined.includes('lamp')
-  ) {
-    return { material: palette.headlightMat, category: 'faro-emisivo' };
-  }
-  if (combined.includes('frecc')) {
-    return { material: palette.indicatorMat, category: 'intermitente' };
-  }
-  if (
-    combined.includes('gomma') ||
-    combined.includes('pneumatic') ||
-    combined.includes('tire') ||
-    combined.includes('wheel') ||
-    combined.includes('ruota')
-  ) {
-    return { material: palette.tireMat, category: 'neumatico' };
-  }
-  if (
-    combined.includes('sella') ||
-    combined.includes('seat') ||
-    combined.includes('plasticanera') ||
-    combined.includes('plastica_nera')
-  ) {
-    return { material: palette.seatMat, category: 'asiento/plastico-negro' };
-  }
-  if (
-    combined.includes('cromo') ||
-    combined.includes('crome') ||
-    combined.includes('crhome') ||
-    combined.includes('fregio') ||
-    combined.includes('chrome') ||
-    combined.includes('exhaust') ||
-    combined.includes('scarico') ||
-    combined.includes('pipe') ||
-    combined.includes('fork') ||
-    combined.includes('forcella') ||
-    combined.includes('terminali') ||
-    combined.includes('manubrio') ||
-    combined.includes('specchio') ||
-    combined.includes('cerchi') ||
-    combined.includes('raggi') ||
-    combined.includes('steel') ||
-    combined.includes('bulloni')
-  ) {
-    return { material: palette.chromeMat, category: 'cromo' };
-  }
-  if (
-    combined.includes('engine') ||
-    combined.includes('carter') ||
-    combined.includes('motore') ||
-    combined.includes('cilind') ||
-    combined.includes('block') ||
-    combined.includes('testata') ||
-    combined.includes('ingranaggio') ||
-    combined.includes('catena') ||
-    combined.includes('minuteria') ||
-    combined.includes('brake') ||
-    combined.includes('aria')
-  ) {
-    return { material: palette.engineMat, category: 'motor' };
-  }
-  if (
-    combined.includes('frame') ||
-    combined.includes('vernice') ||
-    combined.includes('telaio') ||
-    combined.includes('tank') ||
-    combined.includes('serbatoio') ||
-    combined.includes('fender') ||
-    combined.includes('parafango')
-  ) {
-    return { material: palette.frameMat, category: 'chasis-negro' };
-  }
-  if (combined.includes('carrozzeria')) {
-    return { material: palette.bodyworkMat, category: 'carroceria' };
-  }
-  return { material: palette.neutralMat, category: 'gris-neutro' };
-}
-
-function shouldHondaPartCastShadow(meshName: string, category: string, maxDim: number): boolean {
-  const n = meshName.toLowerCase();
-  if (
-    category === 'faro-emisivo' ||
-    category === 'stop-emisivo' ||
-    category === 'intermitente' ||
-    category === 'gris-neutro' ||
-    n.includes('bulloni') ||
-    n.includes('minuteria') ||
-    n.includes('raggi') ||
-    n.includes('vetri') ||
-    n.includes('specchio') ||
-    n.includes('cruscotto') ||
-    n.includes('tachimetri') ||
-    n.includes('fregio') ||
-    n.includes('ingranaggio')
-  ) {
-    return false;
-  }
-  return maxDim >= 0.26;
-}
-
-function normalizeGeometryForMerge(
-  source: THREE.BufferGeometry,
-  transformMatrix?: THREE.Matrix4
-): THREE.BufferGeometry | null {
-  const nonIndexed = source.index ? source.toNonIndexed() : source.clone();
-  const posAttr = nonIndexed.getAttribute('position');
-  if (!posAttr || posAttr.count === 0) {
-    nonIndexed.dispose();
-    return null;
-  }
-  if (transformMatrix) {
-    nonIndexed.applyMatrix4(transformMatrix);
-  }
-  if (!nonIndexed.getAttribute('normal')) {
-    nonIndexed.computeVertexNormals();
-  }
-  for (const attrName of Object.keys(nonIndexed.attributes)) {
-    if (attrName !== 'position' && attrName !== 'normal') {
-      nonIndexed.deleteAttribute(attrName);
-    }
-  }
-  return nonIndexed;
-}
-
-function mergeBucketsIntoGroup(
-  buckets: Map<string, { material: THREE.Material; castShadow: boolean; geos: THREE.BufferGeometry[] }>,
-  targetGroup: THREE.Group,
-  disposableGeometries: THREE.BufferGeometry[],
-  interactType?: string
-): void {
-  buckets.forEach((bucket) => {
-    if (bucket.geos.length === 0) return;
-    const merged =
-      bucket.geos.length === 1
-        ? bucket.geos[0]
-        : mergeGeometries(bucket.geos, false);
-    if (bucket.geos.length > 1) {
-      for (let i = 0; i < bucket.geos.length; i++) bucket.geos[i].dispose();
-    }
-    if (!merged) return;
-    disposableGeometries.push(merged);
-    const mergedMesh = new THREE.Mesh(merged, bucket.material);
-    mergedMesh.castShadow = bucket.castShadow;
-    mergedMesh.receiveShadow = bucket.castShadow;
-    if (interactType) {
-      mergedMesh.userData.interactType = interactType;
-    }
-    targetGroup.add(mergedMesh);
-  });
-}
-
-function buildSubGeometryFromTriangles(
-  source: THREE.BufferGeometry,
-  triStarts: number[],
-  transformMatrix?: THREE.Matrix4
-): THREE.BufferGeometry | null {
-  if (triStarts.length === 0) return null;
-  const srcPos = source.getAttribute('position');
-  const srcNorm = source.getAttribute('normal');
-  const vCount = triStarts.length * 3;
-  const posArr = new Float32Array(vCount * 3);
-  const normArr = srcNorm ? new Float32Array(vCount * 3) : null;
-  const normalMat = transformMatrix ? _tmpMat3A.getNormalMatrix(transformMatrix) : null;
-
-  for (let t = 0; t < triStarts.length; t++) {
-    const base = triStarts[t];
-    for (let k = 0; k < 3; k++) {
-      const si = base + k;
-      const di = t * 3 + k;
-      _tmpVec3A.fromBufferAttribute(srcPos, si);
-      if (transformMatrix) _tmpVec3A.applyMatrix4(transformMatrix);
-      posArr[di * 3] = _tmpVec3A.x;
-      posArr[di * 3 + 1] = _tmpVec3A.y;
-      posArr[di * 3 + 2] = _tmpVec3A.z;
-      if (normArr && srcNorm) {
-        _tmpVec3B.fromBufferAttribute(srcNorm, si);
-        if (normalMat) _tmpVec3B.applyMatrix3(normalMat).normalize();
-        normArr[di * 3] = _tmpVec3B.x;
-        normArr[di * 3 + 1] = _tmpVec3B.y;
-        normArr[di * 3 + 2] = _tmpVec3B.z;
-      }
-    }
-  }
-
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-  if (normArr) out.setAttribute('normal', new THREE.BufferAttribute(normArr, 3));
-  else out.computeVertexNormals();
-  return out;
-}
-
-// Sistema liviano de Triggers / Zonas de evento
 interface InternalTriggerZone {
   id: string;
   label: string;
@@ -1236,16 +892,16 @@ interface InternalTriggerZone {
 
 class TriggerSystem {
   private readonly zones: InternalTriggerZone[] = [];
-  private readonly scene: THREE.Scene;
+  private readonly targetGroup: THREE.Group;
   private readonly disposableGeometries: THREE.BufferGeometry[];
   private readonly disposableMaterials: THREE.Material[];
 
   constructor(
-    scene: THREE.Scene,
+    targetGroup: THREE.Group,
     disposableGeometries: THREE.BufferGeometry[],
     disposableMaterials: THREE.Material[]
   ) {
-    this.scene = scene;
+    this.targetGroup = targetGroup;
     this.disposableGeometries = disposableGeometries;
     this.disposableMaterials = disposableMaterials;
   }
@@ -1266,7 +922,7 @@ class TriggerSystem {
       this.disposableMaterials.push(mat);
       mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(px, py, pz);
-      this.scene.add(mesh);
+      this.targetGroup.add(mesh);
     }
 
     const zone: InternalTriggerZone = {
@@ -1288,6 +944,10 @@ class TriggerSystem {
     };
     this.zones.push(zone);
     return zone;
+  }
+
+  public clear(): void {
+    this.zones.length = 0;
   }
 
   public update(
@@ -1329,29 +989,30 @@ class TriggerSystem {
   }
 }
 
-// ============================================================================
-// Entidades Escalables del Motor (heredan de Entity)
-// ============================================================================
-
 class DoorEntity extends Entity {
   public doorOpen = false;
   public currentAngle = 0;
+  public readonly doorRoot: THREE.Group;
   public readonly pivot: THREE.Group;
   public readonly leafMesh: THREE.Mesh;
   public readonly handleMesh: THREE.Mesh;
   public readonly leafBody: CANNON.Body;
   public readonly interactTargets: THREE.Object3D[];
 
-  private readonly hingeX: number;
-  private readonly hingeZ: number;
+  private readonly world: CANNON.World;
+  private readonly parentGroup: THREE.Group;
+  private readonly frameBodies: CANNON.Body[] = [];
+  private readonly doorX: number;
   private readonly doorY: number;
+  private readonly doorZ: number;
+  private readonly rotY: number;
   private readonly openW: number;
   private readonly openH: number;
   private readonly audio: AudioManager;
 
   constructor(
-    cfg: LevelJSON['door'],
-    scene: THREE.Scene,
+    cfg: MapDoorJSON,
+    parentGroup: THREE.Group,
     world: CANNON.World,
     groundPhysMat: CANNON.Material,
     materials: {
@@ -1364,18 +1025,31 @@ class DoorEntity extends Entity {
     audio: AudioManager
   ) {
     super('door');
+    this.world = world;
+    this.parentGroup = parentGroup;
     this.audio = audio;
 
-    const [doorX, doorY, doorZ] = cfg.position;
-    this.doorY = doorY;
-    this.openW = cfg.openingWidth;
-    this.openH = cfg.openingHeight;
-    const frameT = cfg.frameThickness;
-    const frameD = cfg.frameDepth;
-    const leafT = cfg.leafThickness;
+    const [doorX, doorY, doorZ] = cfg.pos;
+    const [sizeW, sizeH, sizeT] = cfg.size ?? [
+      DOOR_CONFIG.openingWidth,
+      DOOR_CONFIG.openingHeight,
+      DOOR_CONFIG.leafThickness,
+    ];
+    this.rotY = Array.isArray(cfg.rot) ? cfg.rot[1] : cfg.rot ?? 0;
 
-    const doorRoot = new THREE.Group();
-    scene.add(doorRoot);
+    this.doorX = doorX;
+    this.doorY = doorY;
+    this.doorZ = doorZ;
+    this.openW = sizeW;
+    this.openH = sizeH;
+    const frameT = DOOR_CONFIG.frameThickness;
+    const frameD = DOOR_CONFIG.frameDepth;
+    const leafT = sizeT;
+
+    this.doorRoot = new THREE.Group();
+    this.doorRoot.position.set(doorX, doorY, doorZ);
+    this.doorRoot.rotation.y = this.rotY;
+    parentGroup.add(this.doorRoot);
 
     const postGeo = new THREE.BoxGeometry(frameT, this.openH, frameD);
     const lintelGeo = new THREE.BoxGeometry(this.openW + frameT * 2, frameT, frameD);
@@ -1384,69 +1058,62 @@ class DoorEntity extends Entity {
     disposableGeometries.push(postGeo, lintelGeo, leafGeo, handleGeo);
 
     const leftPostMesh = new THREE.Mesh(postGeo, materials.doorFrame);
-    leftPostMesh.position.set(
-      doorX - this.openW / 2 - frameT / 2,
-      doorY + this.openH / 2,
-      doorZ
-    );
+    leftPostMesh.position.set(-this.openW / 2 - frameT / 2, this.openH / 2, 0);
     leftPostMesh.castShadow = true;
     leftPostMesh.receiveShadow = true;
 
     const rightPostMesh = new THREE.Mesh(postGeo, materials.doorFrame);
-    rightPostMesh.position.set(
-      doorX + this.openW / 2 + frameT / 2,
-      doorY + this.openH / 2,
-      doorZ
-    );
+    rightPostMesh.position.set(this.openW / 2 + frameT / 2, this.openH / 2, 0);
     rightPostMesh.castShadow = true;
     rightPostMesh.receiveShadow = true;
 
     const lintelMesh = new THREE.Mesh(lintelGeo, materials.doorFrame);
-    lintelMesh.position.set(doorX, doorY + this.openH + frameT / 2, doorZ);
+    lintelMesh.position.set(0, this.openH + frameT / 2, 0);
     lintelMesh.castShadow = true;
     lintelMesh.receiveShadow = true;
 
-    doorRoot.add(leftPostMesh, rightPostMesh, lintelMesh);
+    this.doorRoot.add(leftPostMesh, rightPostMesh, lintelMesh);
     cameraColliders.push(leftPostMesh, rightPostMesh, lintelMesh);
 
-    const addFrameBody = (
-      px: number,
-      py: number,
-      pz: number,
-      sx: number,
-      sy: number,
-      sz: number
-    ) => {
+    const cosY = Math.cos(this.rotY);
+    const sinY = Math.sin(this.rotY);
+    const addFrameBody = (lx: number, ly: number, lz: number, sx: number, sy: number, sz: number) => {
       const b = new CANNON.Body({
         mass: 0,
         material: groundPhysMat,
         shape: new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2)),
       });
-      b.position.set(px, py, pz);
+      b.position.set(
+        doorX + lx * cosY + lz * sinY,
+        doorY + ly,
+        doorZ - lx * sinY + lz * cosY
+      );
+      b.quaternion.setFromAxisAngle(_cannonYAxis, this.rotY);
       world.addBody(b);
+      this.frameBodies.push(b);
     };
-    addFrameBody(leftPostMesh.position.x, leftPostMesh.position.y, leftPostMesh.position.z, frameT, this.openH, frameD);
-    addFrameBody(rightPostMesh.position.x, rightPostMesh.position.y, rightPostMesh.position.z, frameT, this.openH, frameD);
-    addFrameBody(lintelMesh.position.x, lintelMesh.position.y, lintelMesh.position.z, this.openW + frameT * 2, frameT, frameD);
+    addFrameBody(-this.openW / 2 - frameT / 2, this.openH / 2, 0, frameT, this.openH, frameD);
+    addFrameBody(this.openW / 2 + frameT / 2, this.openH / 2, 0, frameT, this.openH, frameD);
+    addFrameBody(0, this.openH + frameT / 2, 0, this.openW + frameT * 2, frameT, frameD);
 
-    this.hingeX = doorX - this.openW / 2;
-    this.hingeZ = doorZ;
     this.pivot = new THREE.Group();
-    this.pivot.position.set(this.hingeX, doorY, this.hingeZ);
-    doorRoot.add(this.pivot);
+    this.pivot.position.set(-this.openW / 2, 0, 0);
+    this.doorRoot.add(this.pivot);
 
     this.leafMesh = new THREE.Mesh(leafGeo, materials.doorLeaf);
     this.leafMesh.position.set(this.openW / 2, this.openH / 2, 0);
     this.leafMesh.castShadow = true;
     this.leafMesh.receiveShadow = true;
     this.leafMesh.userData.interactType = 'door';
+    this.leafMesh.userData.doorEntity = this;
     this.pivot.add(this.leafMesh);
     cameraColliders.push(this.leafMesh);
 
     this.handleMesh = new THREE.Mesh(handleGeo, materials.doorHandle);
     this.handleMesh.position.set(this.openW - 0.18, 1.05, 0);
-    this.handleMesh.castShadow = true;
+    this.handleMesh.castShadow = false;
     this.handleMesh.userData.interactType = 'door';
+    this.handleMesh.userData.doorEntity = this;
     this.pivot.add(this.handleMesh);
 
     this.leafBody = new CANNON.Body({
@@ -1454,7 +1121,7 @@ class DoorEntity extends Entity {
       material: groundPhysMat,
       shape: new CANNON.Box(new CANNON.Vec3(this.openW / 2, this.openH / 2, leafT / 2)),
     });
-    this.leafBody.position.set(this.hingeX + this.openW / 2, doorY + this.openH / 2, this.hingeZ);
+    this.syncBodyTransform(0);
     world.addBody(this.leafBody);
 
     this.interactTargets = [this.leafMesh, this.handleMesh];
@@ -1472,14 +1139,26 @@ class DoorEntity extends Entity {
     this.pivot.rotation.y = 0;
   }
 
+  public override destroy(): void {
+    this.parentGroup.remove(this.doorRoot);
+    this.world.removeBody(this.leafBody);
+    for (let i = 0; i < this.frameBodies.length; i++) {
+      this.world.removeBody(this.frameBodies[i]);
+    }
+    this.frameBodies.length = 0;
+  }
+
   private syncBodyTransform(angle: number): void {
+    const totalYaw = this.rotY + angle;
+    const hingeWx = this.doorX - (this.openW / 2) * Math.cos(this.rotY);
+    const hingeWz = this.doorZ + (this.openW / 2) * Math.sin(this.rotY);
     const halfW = this.openW / 2;
     this.leafBody.position.set(
-      this.hingeX + halfW * Math.cos(angle),
+      hingeWx + halfW * Math.cos(totalYaw),
       this.doorY + this.openH / 2,
-      this.hingeZ - halfW * Math.sin(angle)
+      hingeWz - halfW * Math.sin(totalYaw)
     );
-    this.leafBody.quaternion.setFromAxisAngle(_cannonYAxis, angle);
+    this.leafBody.quaternion.setFromAxisAngle(_cannonYAxis, totalYaw);
   }
 
   public fixedUpdate(fixedDt: number): void {
@@ -1494,8 +1173,8 @@ class DoorEntity extends Entity {
 }
 
 interface VehicleDriveInput {
-  throttle: number; // -1 (reversa/freno) .. 1 (acelerar)
-  steer: number;    // -1 (derecha) .. 1 (izquierda)
+  throttle: number;
+  steer: number;
 }
 
 class MotorcycleEntity extends Entity {
@@ -1519,15 +1198,23 @@ class MotorcycleEntity extends Entity {
   public smoothYawRate = 0;
   public leanAngle = 0;
   public wheelieAngle = 0;
-  public wheeliePitchVel = 0;
   public headingYaw: number = VEHICLE_CONFIG.spawnYaw;
   public detectedParts: string[] = [];
+  public optStats: HondaOptStats | null = null;
 
+  private spawnPos: [number, number, number] = [...VEHICLE_CONFIG.spawnPosition];
+  private spawnYaw: number = VEHICLE_CONFIG.spawnYaw;
   private wheelSpinAngle = 0;
+  private frontWheelSpinAngle = 0;
   private minAirborneVy = 0;
   private prevMountedSpeed = 0;
   private wasWheelieActive = false;
+  private wheelieTargetPitch = 0;
   private isGrounded = true;
+  private frontGrounded = true;
+  private rearGrounded = true;
+  private frontCompression = 0.075;
+  private rearCompression = 0.075;
   private rearAxleZ = 0.622;
   private pendingWipeoutReason: 'wheelie' | 'crash' | null = null;
 
@@ -1536,6 +1223,10 @@ class MotorcycleEntity extends Entity {
   private modelFrontWheel: THREE.Object3D | null = null;
   private modelRearWheel: THREE.Object3D | null = null;
   private modelFork: THREE.Object3D | null = null;
+  private frontWheelBaseY = 0;
+  private rearWheelBaseY = 0;
+  private procFrontWheelBaseY = 0;
+  private procRearWheelBaseY = 0;
 
   private readonly world: CANNON.World;
   private readonly driveInput: VehicleDriveInput;
@@ -1548,6 +1239,13 @@ class MotorcycleEntity extends Entity {
     ejectVel: THREE.Vector3
   ) => void;
   private readonly audio: AudioManager;
+
+  // Parámetros de suspensión de 2 ruedas
+  private readonly wheelRestLength = 0.54;
+  private readonly suspStiffness = 13800;
+  private readonly suspDampCompress = 1850;
+  private readonly suspDampRelax = 2150;
+  private readonly eqCompression = 0.075;
 
   constructor(
     scene: THREE.Scene,
@@ -1574,20 +1272,26 @@ class MotorcycleEntity extends Entity {
     this.audio = audio;
 
     const [sx, sy, sz] = VEHICLE_CONFIG.boxSize;
-    const [px, py, pz] = VEHICLE_CONFIG.spawnPosition;
+    const [px, py, pz] = this.spawnPos;
 
+    // Caja protectora de chasis elevada +0.14m + topes esféricos de rueda sin fricción para evitar incrustación en suelo
     this.body = new CANNON.Body({
       mass: VEHICLE_CONFIG.mass,
       material: vehiclePhysMat,
       allowSleep: false,
-      linearDamping: 0.0,
-      angularDamping: 0.88,
+      linearDamping: 0.01,
+      angularDamping: 0.16,
     });
-    // Evita vuelcos laterales manteniendo el giro libre alrededor de Y
-    this.body.angularFactor.set(0, 1, 0);
-    this.body.addShape(new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2)));
+    this.body.angularFactor.set(1, 1, 1);
+    this.body.addShape(
+      new CANNON.Box(new CANNON.Vec3(sx * 0.44, sy * 0.27, sz * 0.47)),
+      new CANNON.Vec3(0, 0.14, 0)
+    );
+    const wheelGuardShape = new CANNON.Sphere(0.24);
+    this.body.addShape(wheelGuardShape, new CANNON.Vec3(0, -0.22, -0.65));
+    this.body.addShape(wheelGuardShape, new CANNON.Vec3(0, -0.22, 0.65));
     this.body.position.set(px, py, pz);
-    this.body.quaternion.setFromAxisAngle(_cannonYAxis, VEHICLE_CONFIG.spawnYaw);
+    this.body.quaternion.setFromAxisAngle(_cannonYAxis, this.spawnYaw);
     this.world.addBody(this.body);
 
     this.previousPosition.set(px, py, pz);
@@ -1602,12 +1306,9 @@ class MotorcycleEntity extends Entity {
     this.currentQuaternion.copy(this.previousQuaternion);
     this.interpolatedQuaternion.copy(this.previousQuaternion);
 
-    // Jerarquía unificada:
-    // group (pos + yaw) -> leanGroup (pivote en contacto al suelo y=-sy/2) ->
-    // wheeliePivot (pivote en rueda trasera z=rearAxleZ) -> bikeOffsetGroup -> [chasis + seatAnchor]
     this.group = new THREE.Group();
     this.leanGroup = new THREE.Group();
-    this.leanGroup.position.set(0, -sy / 2, 0);
+    this.leanGroup.position.set(0, -0.484, 0);
     this.wheeliePivot = new THREE.Group();
     this.wheeliePivot.position.set(0, 0, this.rearAxleZ);
     this.bikeOffsetGroup = new THREE.Group();
@@ -1622,7 +1323,6 @@ class MotorcycleEntity extends Entity {
     this.bikeOffsetGroup.add(this.seatAnchor);
     scene.add(this.group);
 
-    // Hitbox invisible para que EngineRaycaster apunte con comodidad en TPS/FPS
     const hitProxyGeo = new THREE.BoxGeometry(sx * 1.35, sy * 1.35, sz * 1.12);
     const hitProxyMat = new THREE.MeshBasicMaterial({
       colorWrite: false,
@@ -1636,324 +1336,48 @@ class MotorcycleEntity extends Entity {
     this.group.add(hitProxy);
     this.interactTargets.push(hitProxy);
 
-    // Respaldo procedural mientras se descarga Honda CB 750 OBJ/MTL
     this.proceduralRig = buildProceduralMotorcycle(
       disposableGeometries,
       disposableMaterials
     );
+    this.procFrontWheelBaseY = this.proceduralRig.frontWheelSpin.position.y;
+    this.procRearWheelBaseY = this.proceduralRig.rearWheelSpin.position.y;
     this.bikeOffsetGroup.add(this.proceduralRig.visualRoot);
+  }
+
+  public setSpawn(pos: [number, number, number], yaw: number): void {
+    this.spawnPos = [pos[0], pos[1], pos[2]];
+    this.spawnYaw = yaw;
   }
 
   public attachHondaObjModel(
     rawModel: THREE.Object3D,
-    paletteCache: { current: HondaMaterialPalette | null },
     disposableGeometries: THREE.BufferGeometry[],
     disposableMaterials: THREE.Material[]
   ): void {
-    const palette = getCachedHondaMaterialPalette(paletteCache, disposableMaterials);
-    const bikeRoot = new THREE.Group();
-    const scaleWrapper = new THREE.Group();
-    bikeRoot.add(scaleWrapper);
-    scaleWrapper.add(rawModel);
+    const masterMats = createHondaMasterMaterials(disposableMaterials);
+    const result = buildOptimizedHondaRig(rawModel, masterMats, disposableGeometries);
 
-    // Orientación frontal y escalado con un solo pase de Box3 reutilizando scratch objects
-    rawModel.position.set(0, 0, 0);
-    rawModel.rotation.set(0, 0, 0);
-    rawModel.updateMatrixWorld(true);
-    let headlightZ = 0;
-    let tailLightZ = 0;
-    _tmpBox3A.makeEmpty();
-    const allMeshes: THREE.Mesh[] = [];
-    const partLogMap = new Map<string, string>();
-
-    rawModel.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        const nameLower = mesh.name.toLowerCase();
-        if (nameLower.includes('fanale')) {
-          _tmpBox3B.setFromObject(mesh);
-          headlightZ = _tmpBox3B.getCenter(_tmpVec3A).z;
-        } else if (nameLower.includes('stop')) {
-          _tmpBox3B.setFromObject(mesh);
-          tailLightZ = _tmpBox3B.getCenter(_tmpVec3A).z;
-        }
-        allMeshes.push(mesh);
-      }
-    });
-    if (headlightZ > tailLightZ) {
-      rawModel.rotation.y = Math.PI;
-    }
-
-    // Cálculo único de Box3 y escala uniforme a 2.0m
-    scaleWrapper.updateMatrixWorld(true);
-    _tmpBox3A.setFromObject(scaleWrapper, true);
-    _tmpBox3A.getSize(_tmpVec3A);
-    const maxHoriz = Math.max(_tmpVec3A.x, _tmpVec3A.z, 0.001);
-    const uniformScale = VEHICLE_CONFIG.boxSize[2] / maxHoriz;
-    scaleWrapper.scale.setScalar(uniformScale);
-    _tmpBox3A.getCenter(_tmpVec3B);
-    scaleWrapper.position.set(
-      -_tmpVec3B.x * uniformScale,
-      -VEHICLE_CONFIG.boxSize[1] / 2 - _tmpBox3A.min.y * uniformScale,
-      -_tmpVec3B.z * uniformScale
+    this.detectedParts = result.partsList;
+    this.optStats = result.stats;
+    console.log('[Honda CB 750] Nombres únicos mesh/material:', result.partsList);
+    console.log(
+      `[Honda CB 750] Optimización: ${result.stats.beforeMeshes} meshes (${result.stats.beforeTriangles} tris) -> ${result.stats.afterDrawCalls} draw calls (${result.stats.afterTriangles} tris)`
     );
-    bikeRoot.updateMatrixWorld(true);
 
-    // Reutilizar materiales cacheados por categoría y medir caja de asiento + ejes en una sola pasada
-    const matCategories = new Map<THREE.Mesh, string>();
-    const matIdMap = new Map<THREE.Material, string>();
-    let nextMatId = 1;
-    const getMatKey = (mat: THREE.Material, castShadow: boolean) => {
-      let id = matIdMap.get(mat);
-      if (!id) {
-        id = String(nextMatId++);
-        matIdMap.set(mat, id);
-      }
-      return `${id}|${castShadow ? 1 : 0}`;
-    };
-
-    const seatBox = _tmpBox3B.makeEmpty();
-    let hasSeatMesh = false;
-    const frontTireBox = new THREE.Box3();
-    const rearTireBox = new THREE.Box3();
-    _tmpMat4A.copy(bikeRoot.matrixWorld).invert();
-
-    for (let m = 0; m < allMeshes.length; m++) {
-      const mesh = allMeshes[m];
-      const meshLabel = mesh.name || '(sin-nombre)';
-      const meshLower = meshLabel.toLowerCase();
-
-      const oldMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-      const mName = oldMat?.name ?? '';
-      const res = resolveHondaPartMaterial(meshLabel, mName, palette);
-      partLogMap.set(`${meshLabel} | ${mName || '(default)'}`, res.category);
-      if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((om) => om?.dispose());
-      } else {
-        oldMat?.dispose();
-      }
-      mesh.material = res.material;
-      matCategories.set(mesh, res.category);
-
-      if (meshLower.includes('sella')) {
-        seatBox.expandByObject(mesh);
-        hasSeatMesh = true;
-      }
-
-      if (meshLower.includes('pneumatici')) {
-        _tmpMat4B.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-        const posAttr = mesh.geometry.getAttribute('position');
-        for (let i = 0; i < posAttr.count; i++) {
-          _tmpVec3A.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4B);
-          if (_tmpVec3A.z < -0.15) frontTireBox.expandByPoint(_tmpVec3A);
-          else if (_tmpVec3A.z > 0.15) rearTireBox.expandByPoint(_tmpVec3A);
-        }
-      }
-    }
-
-    const partsList = Array.from(partLogMap.entries()).map(
-      ([pair, category]) => `${pair} -> ${category}`
-    );
-    this.detectedParts = partsList;
-    console.log('[Honda CB 750] Nombres únicos mesh/material detectados:', partsList);
-
-    if (hasSeatMesh && !seatBox.isEmpty()) {
-      seatBox.getSize(_tmpVec3A);
-      this.seatAnchor.position.set(
-        0,
-        seatBox.min.y + _tmpVec3A.y * 0.38,
-        seatBox.min.z + _tmpVec3A.z * 0.34
-      );
-    } else {
-      const minY = _tmpBox3A.min.y * uniformScale - _tmpVec3B.y * uniformScale + (-VEHICLE_CONFIG.boxSize[1] / 2 - _tmpBox3A.min.y * uniformScale);
-      const sizeY = (_tmpBox3A.max.y - _tmpBox3A.min.y) * uniformScale;
-      const sizeZ = (_tmpBox3A.max.z - _tmpBox3A.min.z) * uniformScale;
-      this.seatAnchor.position.set(0, minY + sizeY * 0.62, -sizeZ * 0.5 + sizeZ * 0.64);
-    }
-
-    const frontAxle = frontTireBox.isEmpty()
-      ? _tmpVec3C.set(0, -0.221, -0.701)
-      : frontTireBox.getCenter(_tmpVec3C);
-    const rearAxle = rearTireBox.isEmpty()
-      ? _tmpVec3D.set(0, -0.208, 0.622)
-      : rearTireBox.getCenter(_tmpVec3D);
-
-    this.rearAxleZ = rearAxle.z;
+    this.seatAnchor.position.copy(result.seatPosition);
+    this.rearAxleZ = result.rearAxleZ;
     this.wheeliePivot.position.set(0, 0, this.rearAxleZ);
     this.bikeOffsetGroup.position.set(0, VEHICLE_CONFIG.boxSize[1] / 2, -this.rearAxleZ);
 
-    const forkPivot = new THREE.Group();
-    forkPivot.position.set(0, 0.36, -0.45);
-    bikeRoot.add(forkPivot);
-
-    const frontWheelSpin = new THREE.Group();
-    frontWheelSpin.position.set(
-      0,
-      frontAxle.y - forkPivot.position.y,
-      frontAxle.z - forkPivot.position.z
-    );
-    forkPivot.add(frontWheelSpin);
-
-    const rearWheelSpin = new THREE.Group();
-    rearWheelSpin.position.set(0, rearAxle.y, rearAxle.z);
-    bikeRoot.add(rearWheelSpin);
-
-    bikeRoot.updateMatrixWorld(true);
-    _tmpMat4A.copy(bikeRoot.matrixWorld).invert(); // bikeRootInvAfterPivots
-    _tmpMat4B.copy(forkPivot.matrixWorld).invert(); // forkInv
-    _tmpMat4C.copy(frontWheelSpin.matrixWorld).invert(); // frontWheelInv
-    _tmpMat4D.copy(rearWheelSpin.matrixWorld).invert(); // rearWheelInv
-
-    type BucketMap = Map<string, { material: THREE.Material; castShadow: boolean; geos: THREE.BufferGeometry[] }>;
-    const staticBuckets: BucketMap = new Map();
-    const forkBuckets: BucketMap = new Map();
-    const frontWheelBuckets: BucketMap = new Map();
-    const rearWheelBuckets: BucketMap = new Map();
-
-    const pushToBucket = (
-      buckets: BucketMap,
-      mat: THREE.Material,
-      castShadow: boolean,
-      geo: THREE.BufferGeometry | null
-    ) => {
-      if (!geo) return;
-      const key = getMatKey(mat, castShadow);
-      let entry = buckets.get(key);
-      if (!entry) {
-        entry = { material: mat, castShadow, geos: [] };
-        buckets.set(key, entry);
-      }
-      entry.geos.push(geo);
-    };
-
-    const centroid = new THREE.Vector3();
-    const vA = new THREE.Vector3();
-    const vB = new THREE.Vector3();
-    const vC = new THREE.Vector3();
-
-    for (let m = 0; m < allMeshes.length; m++) {
-      const mesh = allMeshes[m];
-      const n = mesh.name.toLowerCase();
-      const mat = mesh.material as THREE.Material;
-      const cat = matCategories.get(mesh) ?? 'gris-neutro';
-      mesh.geometry.computeBoundingBox();
-      const bb = mesh.geometry.boundingBox;
-      const maxMeshDim = bb
-        ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * uniformScale
-        : 0.4;
-      const castShadow = shouldHondaPartCastShadow(mesh.name, cat, maxMeshDim);
-
-      const isTrueWheelMesh =
-        n.includes('pneumatici') ||
-        n.includes('cerchi') ||
-        n.includes('crhome') ||
-        n.includes('brake');
-
-      if (isTrueWheelMesh && !mesh.geometry.index) {
-        const posAttr = mesh.geometry.getAttribute('position');
-        _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-        const frontTris: number[] = [];
-        const rearTris: number[] = [];
-        const staticTris: number[] = [];
-        const isTire = n.includes('pneumatici');
-        const maxR = isTire ? 0.34 : n.includes('brake') ? 0.19 : 0.255;
-        const maxX = isTire ? 0.08 : n.includes('brake') ? 0.075 : 0.068;
-
-        for (let i = 0; i + 2 < posAttr.count; i += 3) {
-          vA.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4E);
-          vB.fromBufferAttribute(posAttr, i + 1).applyMatrix4(_tmpMat4E);
-          vC.fromBufferAttribute(posAttr, i + 2).applyMatrix4(_tmpMat4E);
-          centroid.copy(vA).add(vB).add(vC).multiplyScalar(1 / 3);
-
-          const dFront = Math.hypot(centroid.y - frontAxle.y, centroid.z - frontAxle.z);
-          const dRear = Math.hypot(centroid.y - rearAxle.y, centroid.z - rearAxle.z);
-          if (Math.abs(centroid.x) < maxX && dFront < maxR) {
-            frontTris.push(i);
-          } else if (Math.abs(centroid.x) < maxX && dRear < maxR && !n.includes('brake')) {
-            rearTris.push(i);
-          } else {
-            staticTris.push(i);
-          }
-        }
-
-        if (frontTris.length > 0) {
-          _tmpMat4E.multiplyMatrices(_tmpMat4C, mesh.matrixWorld);
-          const fGeo = buildSubGeometryFromTriangles(mesh.geometry, frontTris, _tmpMat4E);
-          pushToBucket(frontWheelBuckets, mat, isTire, fGeo);
-        }
-        if (rearTris.length > 0) {
-          _tmpMat4E.multiplyMatrices(_tmpMat4D, mesh.matrixWorld);
-          const rGeo = buildSubGeometryFromTriangles(mesh.geometry, rearTris, _tmpMat4E);
-          pushToBucket(rearWheelBuckets, mat, isTire, rGeo);
-        }
-        if (staticTris.length > 0) {
-          _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-          const sGeo = buildSubGeometryFromTriangles(mesh.geometry, staticTris, _tmpMat4E);
-          pushToBucket(staticBuckets, mat, castShadow, sGeo);
-        }
-        mesh.geometry.dispose();
-        continue;
-      }
-
-      if (n.includes('manubrio') && !mesh.geometry.index) {
-        const posAttr = mesh.geometry.getAttribute('position');
-        _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-        const upperBarTris: number[] = [];
-        const fixedBarTris: number[] = [];
-        for (let i = 0; i + 2 < posAttr.count; i += 3) {
-          vA.fromBufferAttribute(posAttr, i).applyMatrix4(_tmpMat4E);
-          vB.fromBufferAttribute(posAttr, i + 1).applyMatrix4(_tmpMat4E);
-          vC.fromBufferAttribute(posAttr, i + 2).applyMatrix4(_tmpMat4E);
-          centroid.copy(vA).add(vB).add(vC).multiplyScalar(1 / 3);
-          if (centroid.y > 0.31 && centroid.z < -0.14) {
-            upperBarTris.push(i);
-          } else {
-            fixedBarTris.push(i);
-          }
-        }
-        if (upperBarTris.length > 0) {
-          _tmpMat4E.multiplyMatrices(_tmpMat4B, mesh.matrixWorld);
-          const barGeo = buildSubGeometryFromTriangles(mesh.geometry, upperBarTris, _tmpMat4E);
-          pushToBucket(forkBuckets, mat, false, barGeo);
-        }
-        if (fixedBarTris.length > 0) {
-          _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-          const restGeo = buildSubGeometryFromTriangles(mesh.geometry, fixedBarTris, _tmpMat4E);
-          pushToBucket(staticBuckets, mat, false, restGeo);
-        }
-        mesh.geometry.dispose();
-        continue;
-      }
-
-      const isForkPart =
-        n.includes('fanale') ||
-        n.includes('tachimetri') ||
-        n.includes('cruscotto') ||
-        n.includes('vetri') ||
-        n.includes('specchio');
-      if (isForkPart) {
-        _tmpMat4E.multiplyMatrices(_tmpMat4B, mesh.matrixWorld);
-        pushToBucket(forkBuckets, mat, false, normalizeGeometryForMerge(mesh.geometry, _tmpMat4E));
-      } else {
-        _tmpMat4E.multiplyMatrices(_tmpMat4A, mesh.matrixWorld);
-        pushToBucket(staticBuckets, mat, castShadow, normalizeGeometryForMerge(mesh.geometry, _tmpMat4E));
-      }
-      mesh.geometry.dispose();
-    }
-
-    // Reconstruir bikeRoot únicamente con los meshes combinados por material (de ~45+ draw calls a ~10)
-    bikeRoot.remove(scaleWrapper);
-    mergeBucketsIntoGroup(staticBuckets, bikeRoot, disposableGeometries);
-    mergeBucketsIntoGroup(forkBuckets, forkPivot, disposableGeometries);
-    mergeBucketsIntoGroup(frontWheelBuckets, frontWheelSpin, disposableGeometries);
-    mergeBucketsIntoGroup(rearWheelBuckets, rearWheelSpin, disposableGeometries);
-
-    this.modelFork = forkPivot;
-    this.modelFrontWheel = frontWheelSpin;
-    this.modelRearWheel = rearWheelSpin;
-    this.modelRoot = bikeRoot;
+    this.modelFork = result.forkPivot;
+    this.modelFrontWheel = result.frontWheelSpin;
+    this.modelRearWheel = result.rearWheelSpin;
+    this.frontWheelBaseY = result.frontWheelSpin.position.y;
+    this.rearWheelBaseY = result.rearWheelSpin.position.y;
+    this.modelRoot = result.bikeRoot;
     this.proceduralRig.visualRoot.visible = false;
-    this.bikeOffsetGroup.add(bikeRoot);
+    this.bikeOffsetGroup.add(result.bikeRoot);
   }
 
   public syncInterpolationBuffers(): void {
@@ -1981,22 +1405,27 @@ class MotorcycleEntity extends Entity {
     }
   }
 
-  public reset(): void {
-    const [px, py, pz] = VEHICLE_CONFIG.spawnPosition;
+  public reset(pos?: [number, number, number], yaw?: number): void {
+    const [px, py, pz] = pos ?? this.spawnPos;
+    const yRot = yaw ?? this.spawnYaw;
     this.body.position.set(px, py, pz);
     this.body.velocity.set(0, 0, 0);
     this.body.angularVelocity.set(0, 0, 0);
-    this.body.quaternion.setFromAxisAngle(_cannonYAxis, VEHICLE_CONFIG.spawnYaw);
+    this.body.force.set(0, 0, 0);
+    this.body.torque.set(0, 0, 0);
+    this.body.quaternion.setFromAxisAngle(_cannonYAxis, yRot);
     this.currentForwardSpeed = 0;
     this.prevMountedSpeed = 0;
     this.smoothSteerAngle = 0;
     this.smoothYawRate = 0;
     this.leanAngle = 0;
     this.wheelieAngle = 0;
-    this.wheeliePitchVel = 0;
+    this.wheelieTargetPitch = 0;
     this.wasWheelieActive = false;
+    this.frontCompression = this.eqCompression;
+    this.rearCompression = this.eqCompression;
     this.pendingWipeoutReason = null;
-    this.headingYaw = VEHICLE_CONFIG.spawnYaw;
+    this.headingYaw = yRot;
     this.minAirborneVy = 0;
     this.syncInterpolationBuffers();
   }
@@ -2024,38 +1453,104 @@ class MotorcycleEntity extends Entity {
       _bikeFwd.z * baseSpeed
     );
     if (reason === 'wheelie') {
-      // Caída hacia atrás/arriba con ligera inercia de la moto
       _wipeoutEjectVel.set(-_bikeFwd.x * 1.4, 3.4, -_bikeFwd.z * 1.4);
     } else {
-      // Impacto frontal: proyección hacia adelante/arriba
       _wipeoutEjectVel.set(_bikeFwd.x * 3.8, 4.1, _bikeFwd.z * 3.8);
     }
 
     this.isMounted = false;
     this.wasWheelieActive = false;
-    this.wheeliePitchVel = -1.6;
+    this.wheelieTargetPitch = 0;
     this.pendingWipeoutReason = reason;
   }
 
-  private evaluateGrounded(): boolean {
-    for (let i = 0; i < this.world.contacts.length; i++) {
-      const c = this.world.contacts[i];
-      if (c.bi === this.body && -c.ni.y > 0.4) return true;
-      if (c.bj === this.body && c.ni.y > 0.4) return true;
+  private applyWheelSuspension(
+    localZ: number,
+    prevComp: number,
+    fixedDt: number,
+    disableContact: boolean
+  ): { hit: boolean; compression: number; normalY: number } {
+    if (disableContact) {
+      return { hit: false, compression: 0, normalY: 1 };
     }
-    let hit = false;
-    _rayFrom.set(this.body.position.x, this.body.position.y, this.body.position.z);
-    _rayTo.set(
-      this.body.position.x,
-      this.body.position.y - (VEHICLE_CONFIG.boxSize[1] / 2 + 0.16),
-      this.body.position.z
+    _hubLocal.set(0, -0.02, localZ).applyQuaternion(_bikeQuat);
+    _hubWorld.set(
+      this.body.position.x + _hubLocal.x,
+      this.body.position.y + _hubLocal.y,
+      this.body.position.z + _hubLocal.z
     );
+
+    const probeMargin = 0.28;
+    _rayDir.set(-_bikeUp.x * 0.16, -0.84 - _bikeUp.y * 0.16, -_bikeUp.z * 0.16).normalize();
+    _rayFrom.set(
+      _hubWorld.x - _rayDir.x * probeMargin,
+      _hubWorld.y - _rayDir.y * probeMargin,
+      _hubWorld.z - _rayDir.z * probeMargin
+    );
+    const castReach = this.wheelRestLength + 0.06;
+    _rayTo.set(
+      _hubWorld.x + _rayDir.x * castReach,
+      _hubWorld.y + _rayDir.y * castReach,
+      _hubWorld.z + _rayDir.z * castReach
+    );
+
+    let closestDist = Infinity;
+    let hitNormalX = 0;
+    let hitNormalY = 1;
+    let hitNormalZ = 0;
+    const totalRayLen = probeMargin + castReach;
+
     this.world.raycastAll(_rayFrom, _rayTo, { skipBackfaces: true }, (res) => {
-      if (res.body && res.body !== this.body && res.hitNormalWorld.y > 0.4) {
-        hit = true;
+      if (
+        res.body &&
+        res.body !== this.body &&
+        res.body.collisionFilterGroup !== 2 &&
+        res.hitNormalWorld.y > 0.25 &&
+        res.distance < closestDist
+      ) {
+        closestDist = res.distance;
+        hitNormalX = res.hitNormalWorld.x;
+        hitNormalY = res.hitNormalWorld.y;
+        hitNormalZ = res.hitNormalWorld.z;
       }
     });
-    return hit;
+
+    if (!Number.isFinite(closestDist) || closestDist > totalRayLen) {
+      return { hit: false, compression: 0, normalY: 1 };
+    }
+
+    const groundDist = Math.max(0, closestDist - probeMargin);
+    const compression = THREE.MathUtils.clamp(
+      this.wheelRestLength - groundDist,
+      0,
+      this.wheelRestLength
+    );
+
+    _wheelPt.set(_hubWorld.x, _hubWorld.y, _hubWorld.z);
+    this.body.getVelocityAtWorldPoint(_wheelPt, _wheelVel);
+    const compRate =
+      fixedDt > 0 ? (compression - prevComp) / fixedDt : -_wheelVel.y;
+    const vVert = _wheelVel.y;
+    const dampingCoeff =
+      vVert < 0 || compRate > 0 ? this.suspDampCompress : this.suspDampRelax;
+
+    const springForce = THREE.MathUtils.clamp(
+      this.suspStiffness * compression - dampingCoeff * vVert,
+      0,
+      6500
+    );
+
+    // Mezcla vertical estable con normal de rampa para absorber baches sin deslizamiento lateral falso
+    _hitNormal.set(hitNormalX * 0.3, hitNormalY * 0.3 + 0.7, hitNormalZ * 0.3).normalize();
+    _forceVec.set(
+      _hitNormal.x * springForce,
+      _hitNormal.y * springForce,
+      _hitNormal.z * springForce
+    );
+    _hubRel.set(_hubLocal.x, _hubLocal.y, _hubLocal.z);
+    this.body.applyForce(_forceVec, _hubRel);
+
+    return { hit: true, compression, normalY: hitNormalY };
   }
 
   public fixedUpdate(fixedDt: number): void {
@@ -2067,19 +1562,71 @@ class MotorcycleEntity extends Entity {
       this.body.quaternion.w
     );
 
+    _bikeQuat.set(
+      this.body.quaternion.x,
+      this.body.quaternion.y,
+      this.body.quaternion.z,
+      this.body.quaternion.w
+    );
+    _bikeFwd.set(0, 0, -1).applyQuaternion(_bikeQuat).normalize();
+    _bikeRight.set(1, 0, 0).applyQuaternion(_bikeQuat).normalize();
+    _bikeUp.set(0, 1, 0).applyQuaternion(_bikeQuat).normalize();
+
+    const currentPitch = Math.asin(THREE.MathUtils.clamp(_bikeFwd.y, -1, 1));
+    const currentRoll = Math.atan2(_bikeRight.y, _bikeUp.y);
+
+    if (this.isMounted && Math.abs(currentRoll) > 1.18) {
+      this.triggerWipeout('crash', Math.abs(this.currentForwardSpeed));
+      return;
+    }
+
+    // 1. Suspensión independiente delantera y trasera simétrica respecto al centro de masa
+    const rearRes = this.applyWheelSuspension(
+      0.65,
+      this.rearCompression,
+      fixedDt,
+      false
+    );
+    // Si hace caballito pronunciado, despega la suspensión delantera
+    const frontRes = this.applyWheelSuspension(
+      -0.65,
+      this.frontCompression,
+      fixedDt,
+      currentPitch > 0.24
+    );
+
+    this.frontCompression = frontRes.compression;
+    this.rearCompression = rearRes.compression;
+    this.frontGrounded = frontRes.hit;
+    this.rearGrounded = rearRes.hit;
+
     const wasGrounded = this.isGrounded;
     if (!wasGrounded) {
       this.minAirborneVy = Math.min(this.minAirborneVy, this.body.velocity.y);
     }
-    const touchingGround = this.evaluateGrounded();
-    if (touchingGround && this.body.velocity.y <= 1.2) {
+
+    let contactGrounded = false;
+    for (let i = 0; i < this.world.contacts.length; i++) {
+      const c = this.world.contacts[i];
+      if (c.bi === this.body && -c.ni.y > 0.4) {
+        contactGrounded = true;
+        break;
+      }
+      if (c.bj === this.body && c.ni.y > 0.4) {
+        contactGrounded = true;
+        break;
+      }
+    }
+
+    const touchingGround = rearRes.hit || frontRes.hit || contactGrounded;
+    if (touchingGround && this.body.velocity.y <= 2.2) {
       this.isGrounded = true;
       if (!wasGrounded) {
         const impactVy = Math.min(this.minAirborneVy, this.body.velocity.y);
-        if (impactVy < -7.0) {
+        if (impactVy < -7.2) {
           this.onHardLanding(impactVy);
           this.audio.playSound('land_hard', { volume: 0.85 });
-          if (this.isMounted && impactVy < -11.5) {
+          if (this.isMounted && impactVy < -12.5) {
             this.triggerWipeout('crash', this.currentForwardSpeed);
           }
         }
@@ -2090,27 +1637,20 @@ class MotorcycleEntity extends Entity {
       this.minAirborneVy = Math.min(this.minAirborneVy, this.body.velocity.y);
     }
 
-    _bikeQuat.set(
-      this.body.quaternion.x,
-      this.body.quaternion.y,
-      this.body.quaternion.z,
-      this.body.quaternion.w
-    );
-    _bikeFwd.set(0, 0, -1).applyQuaternion(_bikeQuat);
-    _bikeFwd.y = 0;
-    if (_bikeFwd.lengthSq() > 0.0001) _bikeFwd.normalize();
-
-    _bikeRight.set(1, 0, 0).applyQuaternion(_bikeQuat);
-    _bikeRight.y = 0;
-    if (_bikeRight.lengthSq() > 0.0001) _bikeRight.normalize();
+    _bikeFwdHoriz.set(_bikeFwd.x, 0, _bikeFwd.z);
+    if (_bikeFwdHoriz.lengthSq() > 0.0001) _bikeFwdHoriz.normalize();
+    _bikeRightHoriz.set(_bikeRight.x, 0, _bikeRight.z);
+    if (_bikeRightHoriz.lengthSq() > 0.0001) _bikeRightHoriz.normalize();
 
     const vx = this.body.velocity.x;
     const vz = this.body.velocity.z;
-    let vFwd = vx * _bikeFwd.x + vz * _bikeFwd.z;
-    let vLat = vx * _bikeRight.x + vz * _bikeRight.z;
+    let vFwd = vx * _bikeFwdHoriz.x + vz * _bikeFwdHoriz.z;
+    let vLat = vx * _bikeRightHoriz.x + vz * _bikeRightHoriz.z;
+
+    let pitchTorque = 0;
+    let targetLeanAngle = 0.04;
 
     if (this.isMounted) {
-      // Detección de choque fuerte frontal contra obstáculo/pared
       if (this.prevMountedSpeed - vFwd > VEHICLE_CONFIG.crashDeltaSpeed) {
         this.triggerWipeout('crash', this.prevMountedSpeed);
         return;
@@ -2121,107 +1661,180 @@ class MotorcycleEntity extends Entity {
       const pullBack = throttle < -0.15 ? Math.abs(throttle) : 0;
       const canWheelie =
         pullBack > 0 &&
-        (this.isGrounded || this.wheelieAngle > 0.04) &&
-        (vFwd > VEHICLE_CONFIG.wheelieMinSpeed || this.wheelieAngle > 0.06);
+        (this.rearGrounded || currentPitch > 0.08) &&
+        (vFwd > VEHICLE_CONFIG.wheelieMinSpeed || currentPitch > 0.14);
 
-      if (throttle > 0.05) {
-        const targetMax = VEHICLE_CONFIG.maxForwardSpeed * throttle;
-        const speedNorm = THREE.MathUtils.clamp(Math.abs(vFwd) / VEHICLE_CONFIG.maxForwardSpeed, 0, 1);
-        const torqueCurve = 1.15 - speedNorm * 0.45;
-        vFwd = Math.min(targetMax, vFwd + VEHICLE_CONFIG.accel * torqueCurve * throttle * fixedDt);
-      } else if (canWheelie) {
-        // Caballito: sostiene impulso con ligera aceleración inicial e inercia suave
-        if (!this.wasWheelieActive) {
-          vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed, vFwd + 1.15);
-        }
-        vFwd = Math.min(
-          VEHICLE_CONFIG.maxForwardSpeed * 0.92,
-          vFwd + 1.45 * pullBack * fixedDt
-        );
-      } else if (throttle < -0.05) {
-        if (vFwd > 0.25) {
-          // Frenado progresivo a baja velocidad
-          vFwd = Math.max(0, vFwd - VEHICLE_CONFIG.brakeDecel * Math.abs(throttle) * fixedDt);
+      const driveContact = this.rearGrounded || this.frontGrounded || contactGrounded;
+      if (driveContact) {
+        const tractionMult = this.rearGrounded ? 1.0 : 0.78;
+        if (throttle > 0.05) {
+          const targetMax = VEHICLE_CONFIG.maxForwardSpeed * throttle;
+          const speedNorm = THREE.MathUtils.clamp(
+            Math.abs(vFwd) / VEHICLE_CONFIG.maxForwardSpeed,
+            0,
+            1
+          );
+          const torqueCurve = 1.18 - speedNorm * 0.48;
+          vFwd = Math.min(
+            targetMax,
+            vFwd + VEHICLE_CONFIG.accel * torqueCurve * tractionMult * throttle * fixedDt
+          );
+          // Transferencia de peso (squat) al acelerar fuerte
+          pitchTorque += throttle * 240 * tractionMult * (1.0 - speedNorm * 0.4);
+        } else if (canWheelie) {
+          if (!this.wasWheelieActive) {
+            vFwd = Math.min(VEHICLE_CONFIG.maxForwardSpeed, vFwd + 1.0);
+            this.wheelieTargetPitch = Math.max(currentPitch, 0.14);
+          }
+          vFwd = Math.min(
+            VEHICLE_CONFIG.maxForwardSpeed * 0.92,
+            vFwd + 1.55 * pullBack * fixedDt
+          );
+        } else if (throttle < -0.05) {
+          if (vFwd > 0.25) {
+            vFwd = Math.max(0, vFwd - VEHICLE_CONFIG.brakeDecel * Math.abs(throttle) * fixedDt);
+            // Hundimiento de horquilla delantera al frenar (brake dive)
+            pitchTorque -= Math.abs(throttle) * 380;
+          } else {
+            const targetMin = -VEHICLE_CONFIG.maxReverseSpeed * Math.abs(throttle);
+            vFwd = Math.max(
+              targetMin,
+              vFwd - VEHICLE_CONFIG.accel * 0.55 * tractionMult * Math.abs(throttle) * fixedDt
+            );
+          }
         } else {
-          const targetMin = -VEHICLE_CONFIG.maxReverseSpeed * Math.abs(throttle);
-          vFwd = Math.max(targetMin, vFwd - VEHICLE_CONFIG.accel * 0.55 * Math.abs(throttle) * fixedDt);
+          const rollingFactor = Math.exp(-VEHICLE_CONFIG.rollingDamping * fixedDt);
+          const aeroLoss = VEHICLE_CONFIG.aeroDrag * vFwd * Math.abs(vFwd) * fixedDt;
+          vFwd = vFwd * rollingFactor - aeroLoss;
+          if (Math.abs(vFwd) < 0.04) vFwd = 0;
         }
       } else {
-        // Inercia realista: desaceleración suave por rodadura + resistencia aerodinámica
-        const rollingFactor = Math.exp(-VEHICLE_CONFIG.rollingDamping * fixedDt);
-        const aeroLoss = VEHICLE_CONFIG.aeroDrag * vFwd * Math.abs(vFwd) * fixedDt;
-        vFwd = vFwd * rollingFactor - aeroLoss;
-        if (Math.abs(vFwd) < 0.04) vFwd = 0;
+        // Resistencia aérea mínima durante saltos
+        vFwd *= Math.exp(-0.08 * fixedDt);
       }
 
-      // Evolución física del caballito (Safe ~40°, Caída crítica ~51°)
+      // Dinámica física del caballito (despegue real de rueda delantera alrededor del eje trasero)
       const safeWheelieRad = THREE.MathUtils.degToRad(VEHICLE_CONFIG.wheelieSafeDeg);
       const critWheelieRad = THREE.MathUtils.degToRad(VEHICLE_CONFIG.wheelieCriticalDeg);
+      const pitchVel =
+        this.body.angularVelocity.x * _bikeRight.x +
+        this.body.angularVelocity.y * _bikeRight.y +
+        this.body.angularVelocity.z * _bikeRight.z;
+
       if (canWheelie) {
         this.wasWheelieActive = true;
-        const inOverBalanceZone = this.wheelieAngle >= safeWheelieRad;
-        const targetPitchVel = (inOverBalanceZone ? 0.44 : 0.94) * pullBack;
-        this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, targetPitchVel, 7.5, fixedDt);
-        this.wheelieAngle += this.wheeliePitchVel * fixedDt;
-        if (this.wheelieAngle >= critWheelieRad) {
-          this.wheelieAngle = critWheelieRad;
+        const rate = this.wheelieTargetPitch >= safeWheelieRad ? 0.56 : 1.05;
+        this.wheelieTargetPitch = Math.min(
+          critWheelieRad + 0.05,
+          this.wheelieTargetPitch + rate * pullBack * fixedDt
+        );
+        const pitchErr = this.wheelieTargetPitch - currentPitch;
+        // Compensación gravitatoria + control PD para levantar físicamente la rueda delantera
+        pitchTorque +=
+          1320 * Math.cos(currentPitch) + pitchErr * 1950 - pitchVel * 240;
+
+        if (currentPitch >= critWheelieRad) {
           this.triggerWipeout('wheelie', vFwd);
           return;
         }
       } else {
         this.wasWheelieActive = false;
-        if (this.wheelieAngle > 0) {
-          this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, -2.5, 6.5, fixedDt);
-          this.wheelieAngle = Math.max(0, this.wheelieAngle + this.wheeliePitchVel * fixedDt);
-          if (this.wheelieAngle <= 0.001) {
-            this.wheelieAngle = 0;
-            this.wheeliePitchVel = 0;
-          }
+        this.wheelieTargetPitch = 0;
+        if (!this.isGrounded) {
+          // Ligero control de pitch en el aire + estabilización suave
+          pitchTorque += throttle * 165 - currentPitch * 320 - pitchVel * 145;
+        } else {
+          // Amortiguación de cabeceo sin anular la respuesta natural de la suspensión en rampas
+          pitchTorque -= pitchVel * 220;
         }
       }
 
-      // Fricción lateral alta para agarre limpio de neumáticos en curva
-      vLat *= Math.exp(-11.0 * fixedDt);
+      // Agarre lateral del neumático (permite derrape controlado al frenar girando)
+      if (this.isGrounded) {
+        const isDrifting =
+          throttle < -0.1 && vFwd > 3.5 && Math.abs(steer) > 0.35;
+        const latGrip = isDrifting ? 5.2 : 11.2;
+        vLat *= Math.exp(-latGrip * fixedDt);
+      } else {
+        vLat *= Math.exp(-1.5 * fixedDt);
+      }
 
-      // Dirección suave y dependiente de la velocidad (sin girar como trompo en parado)
-      this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, steer, 7.5, fixedDt);
+      // Dirección progresiva dependiente de la velocidad
+      this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, steer, 7.8, fixedDt);
       const absSpeed = Math.abs(vFwd);
       const speedTurnFactor =
-        absSpeed < 0.18 ? 0 : THREE.MathUtils.smoothstep(absSpeed, 0.18, 4.8);
-      const highSpeedStabilize = 1.0 - THREE.MathUtils.clamp((absSpeed - 12) / 24, 0, 0.28);
-      const wheelieTurnScale = this.wheelieAngle > 0.12 ? 0.42 : 1.0;
+        absSpeed < 0.16 ? 0 : THREE.MathUtils.smoothstep(absSpeed, 0.16, 4.4);
+      const highSpeedStabilize =
+        1.0 - THREE.MathUtils.clamp((absSpeed - 9.5) / 20.0, 0, 0.44);
+      const wheelieTurnScale = currentPitch > 0.2 ? 0.45 : 1.0;
       const reverseInvert = vFwd < -0.25 ? -1 : 1;
       const targetYawRate =
         this.smoothSteerAngle *
-        VEHICLE_CONFIG.steerSpeed *
+        2.45 *
         speedTurnFactor *
         highSpeedStabilize *
         wheelieTurnScale *
         reverseInvert;
-      this.smoothYawRate = THREE.MathUtils.damp(this.smoothYawRate, targetYawRate, 8.5, fixedDt);
-      this.body.angularVelocity.y = this.isGrounded ? this.smoothYawRate : this.smoothYawRate * 0.35;
+      this.smoothYawRate = THREE.MathUtils.damp(this.smoothYawRate, targetYawRate, 8.8, fixedDt);
+
+      // Inclinación lateral física (roll) en curvas hasta ~34°
+      const leanSpeedFactor = THREE.MathUtils.smoothstep(absSpeed, 0.5, 8.5);
+      const leanCoeff = vFwd < -0.25 ? -0.18 : 0.58;
+      targetLeanAngle = this.smoothSteerAngle * leanSpeedFactor * leanCoeff;
+
       this.prevMountedSpeed = vFwd;
     } else {
       this.prevMountedSpeed = 0;
       this.wasWheelieActive = false;
-      if (this.wheelieAngle > 0) {
-        this.wheeliePitchVel = THREE.MathUtils.damp(this.wheeliePitchVel, -2.8, 7, fixedDt);
-        this.wheelieAngle = Math.max(0, this.wheelieAngle + this.wheeliePitchVel * fixedDt);
-        if (this.wheelieAngle <= 0.001) {
-          this.wheelieAngle = 0;
-          this.wheeliePitchVel = 0;
-        }
+      this.wheelieTargetPitch = 0;
+      if (this.isGrounded) {
+        vFwd *= Math.exp(-3.0 * fixedDt);
+        vLat *= Math.exp(-10.5 * fixedDt);
       }
-      vFwd *= Math.exp(-2.8 * fixedDt);
-      vLat *= Math.exp(-10.0 * fixedDt);
       this.smoothSteerAngle = THREE.MathUtils.damp(this.smoothSteerAngle, 0, 8, fixedDt);
       this.smoothYawRate = THREE.MathUtils.damp(this.smoothYawRate, 0, 8, fixedDt);
-      this.body.angularVelocity.y *= Math.exp(-8.0 * fixedDt);
+      const pitchVel =
+        this.body.angularVelocity.x * _bikeRight.x +
+        this.body.angularVelocity.y * _bikeRight.y +
+        this.body.angularVelocity.z * _bikeRight.z;
+      pitchTorque -= pitchVel * 260;
+      targetLeanAngle = 0.05;
     }
 
+    // 2. Estabilizador giroscópico PD de Roll + aplicación de torques en los 3 ejes
+    const rollVel = -(
+      this.body.angularVelocity.x * _bikeFwd.x +
+      this.body.angularVelocity.y * _bikeFwd.y +
+      this.body.angularVelocity.z * _bikeFwd.z
+    );
+    const rollTorque = (targetLeanAngle - currentRoll) * 2850 - rollVel * 340;
+
+    // Torque total = pitchTorque alrededor de _bikeRight + rollTorque alrededor de -_bikeFwd (eje +Z local)
+    _torqueVec.set(
+      _bikeRight.x * pitchTorque - _bikeFwd.x * rollTorque,
+      _bikeRight.y * pitchTorque - _bikeFwd.y * rollTorque,
+      _bikeRight.z * pitchTorque - _bikeFwd.z * rollTorque
+    );
+    this.body.torque.x += _torqueVec.x;
+    this.body.torque.y += _torqueVec.y;
+    this.body.torque.z += _torqueVec.z;
+
+    // Ajuste suave de velocidad angular de giro en Y y límites anti-glitch
+    const yawAuthority = this.isGrounded ? 1.0 : 0.32;
+    this.body.angularVelocity.y = THREE.MathUtils.damp(
+      this.body.angularVelocity.y,
+      this.smoothYawRate * yawAuthority,
+      10,
+      fixedDt
+    );
+    this.body.angularVelocity.x = THREE.MathUtils.clamp(this.body.angularVelocity.x, -5.5, 5.5);
+    this.body.angularVelocity.z = THREE.MathUtils.clamp(this.body.angularVelocity.z, -5.5, 5.5);
+
     this.currentForwardSpeed = vFwd;
-    this.body.velocity.x = _bikeFwd.x * vFwd + _bikeRight.x * vLat;
-    this.body.velocity.z = _bikeFwd.z * vFwd + _bikeRight.z * vLat;
+    this.wheelieAngle = Math.max(0, currentPitch);
+    this.leanAngle = currentRoll;
+    this.body.velocity.x = _bikeFwdHoriz.x * vFwd + _bikeRightHoriz.x * vLat;
+    this.body.velocity.z = _bikeFwdHoriz.z * vFwd + _bikeRightHoriz.z * vLat;
   }
 
   public update(dt: number, alpha: number): void {
@@ -2237,7 +1850,7 @@ class MotorcycleEntity extends Entity {
       );
     }
 
-    if (this.body.position.y < -12) {
+    if (this.body.position.y < -15) {
       this.reset();
     }
 
@@ -2252,33 +1865,38 @@ class MotorcycleEntity extends Entity {
     _bikeEuler.setFromQuaternion(_interpQuat, 'YXZ');
     this.headingYaw = _bikeEuler.y;
 
-    // Inclinación lateral fluida y proporcional a la velocidad (sin inclinarse estando quieto)
-    const leanSpeedFactor = THREE.MathUtils.smoothstep(
-      Math.abs(this.currentForwardSpeed),
-      0.45,
-      8.5
-    );
-    const reverseLeanDir = this.currentForwardSpeed < -0.25 ? -0.18 : 0.44;
-    const targetLean = this.isMounted
-      ? this.smoothSteerAngle * leanSpeedFactor * reverseLeanDir
-      : 0.05;
     if (dt > 0) {
-      this.leanAngle = THREE.MathUtils.damp(this.leanAngle, targetLean, 6.5, dt);
-      this.wheelSpinAngle -= (this.currentForwardSpeed / VEHICLE_CONFIG.wheelRadius) * dt;
+      const rearSpinSpeed = this.currentForwardSpeed / VEHICLE_CONFIG.wheelRadius;
+      const frontSpinSpeed =
+        this.frontGrounded || Math.abs(this.currentForwardSpeed) > 0.2
+          ? rearSpinSpeed
+          : rearSpinSpeed * 0.65;
+      this.wheelSpinAngle -= rearSpinSpeed * dt;
+      this.frontWheelSpinAngle -= frontSpinSpeed * dt;
     }
-    this.leanGroup.rotation.z = this.leanAngle;
-    this.wheeliePivot.rotation.x = this.wheelieAngle;
+
+    // Recorrido visual de los amortiguadores en ruedas
+    const fTravel = THREE.MathUtils.clamp((this.frontCompression - this.eqCompression) * 0.52, -0.08, 0.11);
+    const rTravel = THREE.MathUtils.clamp((this.rearCompression - this.eqCompression) * 0.52, -0.08, 0.11);
 
     this.proceduralRig.frontForkPivot.rotation.y = this.smoothSteerAngle * 0.36;
-    this.proceduralRig.frontWheelSpin.rotation.x = this.wheelSpinAngle;
+    this.proceduralRig.frontWheelSpin.position.y = this.procFrontWheelBaseY + fTravel;
+    this.proceduralRig.rearWheelSpin.position.y = this.procRearWheelBaseY + rTravel;
+    this.proceduralRig.frontWheelSpin.rotation.x = this.frontWheelSpinAngle;
     this.proceduralRig.rearWheelSpin.rotation.x = this.wheelSpinAngle;
 
     if (this.modelRoot) {
       if (this.modelFork) {
-        this.modelFork.quaternion.setFromAxisAngle(_forkSteerAxis, this.smoothSteerAngle * 0.30);
+        this.modelFork.quaternion.setFromAxisAngle(_forkSteerAxis, this.smoothSteerAngle * 0.32);
       }
-      if (this.modelFrontWheel) this.modelFrontWheel.rotation.x = this.wheelSpinAngle;
-      if (this.modelRearWheel) this.modelRearWheel.rotation.x = this.wheelSpinAngle;
+      if (this.modelFrontWheel) {
+        this.modelFrontWheel.position.y = this.frontWheelBaseY + fTravel;
+        this.modelFrontWheel.rotation.x = this.frontWheelSpinAngle;
+      }
+      if (this.modelRearWheel) {
+        this.modelRearWheel.position.y = this.rearWheelBaseY + rTravel;
+        this.modelRearWheel.rotation.x = this.wheelSpinAngle;
+      }
     }
   }
 }
@@ -2324,6 +1942,7 @@ class PlayerEntity extends Entity {
   public readonly actions: Partial<Record<'Idle' | 'Walk' | 'Run' | 'TPose', THREE.AnimationAction>> = {};
   public activeClipName: 'Idle' | 'Walk' | 'Run' | 'TPose' = 'Idle';
 
+  private spawnPosition: [number, number, number];
   private minAirborneVy = 0;
   private mountedSteerAngle = 0;
   private bodyInWorld = true;
@@ -2345,7 +1964,6 @@ class PlayerEntity extends Entity {
   private readonly ragdollCurrTorsoPos = new THREE.Vector3();
   private readonly ragdollPrevTorsoQuat = new THREE.Quaternion();
   private readonly ragdollCurrTorsoQuat = new THREE.Quaternion();
-  private readonly spawnPosition: readonly [number, number, number];
   private readonly scene: THREE.Scene;
   private readonly world: CANNON.World;
   private readonly ragdollPhysMat: CANNON.Material;
@@ -2364,7 +1982,7 @@ class PlayerEntity extends Entity {
     audio: AudioManager
   ) {
     super('player');
-    this.spawnPosition = spawnPosition;
+    this.spawnPosition = [spawnPosition[0], spawnPosition[1], spawnPosition[2]];
     this.scene = scene;
     this.world = world;
     this.ragdollPhysMat = ragdollPhysMat;
@@ -2401,6 +2019,10 @@ class PlayerEntity extends Entity {
     this.scene.add(this.group);
   }
 
+  public setSpawn(pos: [number, number, number]): void {
+    this.spawnPosition = [pos[0], pos[1], pos[2]];
+  }
+
   public mountTo(seatAnchor: THREE.Group): void {
     if (this.isMounted || this.isRagdoll) return;
     this.isMounted = true;
@@ -2412,16 +2034,9 @@ class PlayerEntity extends Entity {
       this.world.removeBody(this.body);
       this.bodyInWorld = false;
     }
+    if (this.baseMixer) this.baseMixer.stopAllAction();
+    if (this.upperMixer) this.upperMixer.stopAllAction();
 
-    // Detener animaciones activas (locomoción/saludo) para que no luchen con los huesos al conducir
-    if (this.baseMixer) {
-      this.baseMixer.stopAllAction();
-    }
-    if (this.upperMixer) {
-      this.upperMixer.stopAllAction();
-    }
-
-    // Attachment visual directo sobre el asiento de la moto
     seatAnchor.add(this.group);
     this.group.position.set(0, -0.13, 0);
     this.group.quaternion.identity();
@@ -2466,7 +2081,7 @@ class PlayerEntity extends Entity {
         linearDamping: 0.24,
         angularDamping: 0.45,
         collisionFilterGroup: 2,
-        collisionFilterMask: 1, // Colisiona con suelo/obstáculos/moto pero NO entre extremidades
+        collisionFilterMask: 1,
       });
       b.addShape(shape);
       this.ragdollAllBodies.push(b);
@@ -2712,7 +2327,8 @@ class PlayerEntity extends Entity {
     this.activeClipName = nextName;
   }
 
-  public reset(): void {
+  public reset(pos?: [number, number, number]): void {
+    const target = pos ?? this.spawnPosition;
     this.cleanupRagdollBodies();
     this.isRagdoll = false;
     this.pendingRagdollRecovery = false;
@@ -2724,10 +2340,10 @@ class PlayerEntity extends Entity {
       this.world.addBody(this.body);
       this.bodyInWorld = true;
     }
-    this.body.position.set(this.spawnPosition[0], this.spawnPosition[1], this.spawnPosition[2]);
+    this.body.position.set(target[0], target[1], target[2]);
     this.body.velocity.set(0, 0, 0);
     this.syncInterpolationBuffers();
-    this.group.position.set(this.spawnPosition[0], this.spawnPosition[1], this.spawnPosition[2]);
+    this.group.position.set(target[0], target[1], target[2]);
     this.group.quaternion.identity();
     this.headingGroup.rotation.set(0, 0, 0);
     this.headingGroup.quaternion.identity();
@@ -2767,7 +2383,6 @@ class PlayerEntity extends Entity {
   }
 
   private applyFpsHeadMask(): void {
-    // Mantiene visible el resto del cuerpo y los brazos en FPS, ocultando solo visor y cabeza
     if (this.headBone) {
       this.headBone.scale.setScalar(this.isFpsMode ? 0.0005 : 1);
     }
@@ -2806,11 +2421,7 @@ class PlayerEntity extends Entity {
       this.ragdollPrevTorsoQuat.set(t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w);
       this.ragdollTimer += fixedDt;
       const torsoSpeed = Math.hypot(t.velocity.x, t.velocity.y, t.velocity.z);
-      if (torsoSpeed < 0.7) {
-        this.ragdollSettleTime += fixedDt;
-      } else {
-        this.ragdollSettleTime = 0;
-      }
+      this.ragdollSettleTime = torsoSpeed < 0.7 ? this.ragdollSettleTime + fixedDt : 0;
       if (
         (this.ragdollSettleTime > 1.05 && this.ragdollTimer > 1.9) ||
         this.ragdollTimer > 3.8 ||
@@ -2868,7 +2479,7 @@ class PlayerEntity extends Entity {
         const gain = Math.min(1, (accel * fixedDt) / dvMag);
         const forceScale = (this.body.mass * dvMag * gain) / fixedDt;
         _forceVec.set((dvx / dvMag) * forceScale, 0, (dvz / dvMag) * forceScale);
-        this.body.applyForce(_forceVec, this.body.position);
+        this.body.applyForce(_forceVec, _zeroRelVec);
       }
     } else {
       const dampingRate = this.isGrounded ? PHYSICS_CONFIG.groundDamping : PHYSICS_CONFIG.airDamping;
@@ -2899,7 +2510,6 @@ class PlayerEntity extends Entity {
       this.recoverFromRagdoll();
     }
 
-    // Modo ragdoll ligero sincronizado con las 6 partes físicas Cannon-es
     if (this.isRagdoll && this.ragdollBodies) {
       this.reportedAnim = 'Ragdoll';
       this.isGrounded = false;
@@ -2914,9 +2524,7 @@ class PlayerEntity extends Entity {
       this.group.quaternion.identity();
       this.headingGroup.quaternion.copy(_interpQuat);
 
-      if (this.baseMixer) {
-        this.baseMixer.update(0);
-      }
+      if (this.baseMixer) this.baseMixer.update(0);
       for (let i = 0; i < this.tposeSnapshots.length; i++) {
         this.tposeSnapshots[i].bone.quaternion.copy(this.tposeSnapshots[i].quat);
       }
@@ -2973,15 +2581,12 @@ class PlayerEntity extends Entity {
       return;
     }
 
-    // Modo montado: restaurar pose base simétrica (TPose) después del mixer y aplicar pose de conducción
     if (this.isMounted) {
       this.reportedAnim = 'Drive';
       this.isGrounded = true;
       this.isWaving = false;
       this.waveBlend = 0;
-      if (this.baseMixer) {
-        this.baseMixer.update(0);
-      }
+      if (this.baseMixer) this.baseMixer.update(0);
       for (let i = 0; i < this.tposeSnapshots.length; i++) {
         this.tposeSnapshots[i].bone.quaternion.copy(this.tposeSnapshots[i].quat);
       }
@@ -2995,7 +2600,7 @@ class PlayerEntity extends Entity {
       return;
     }
 
-    if (this.body.position.y < -10) {
+    if (this.body.position.y < -15) {
       this.body.position.set(this.spawnPosition[0], this.spawnPosition[1], this.spawnPosition[2]);
       this.body.velocity.set(0, 0, 0);
       this.syncInterpolationBuffers();
@@ -3055,9 +2660,7 @@ class PlayerEntity extends Entity {
     }
 
     if (this.baseMixer) {
-      if (dt > 0) {
-        this.baseMixer.update(dt);
-      }
+      if (dt > 0) this.baseMixer.update(dt);
       if (this.airBlend > 0.005) {
         applyProceduralJumpPose(this.boneRig, this.airBlend, this.body.velocity.y);
       }
@@ -3088,7 +2691,15 @@ export const ThirdPersonViewport = forwardRef<
   ThirdPersonViewportHandle,
   ThirdPersonViewportProps
 >(function ThirdPersonViewport(
-  { onLoadProgress, onStateChange, onContextLostChange },
+  {
+    onLoadProgress,
+    onStateChange,
+    onContextLostChange,
+    initialMap,
+    initialQuality,
+    cameraSensitivity = 1.0,
+    audioVolume = 0.8,
+  },
   ref
 ) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -3099,6 +2710,17 @@ export const ThirdPersonViewport = forwardRef<
   onStateChangeRef.current = onStateChange;
   const onContextLostRef = useRef(onContextLostChange);
   onContextLostRef.current = onContextLostChange;
+  const initialMapRef = useRef(initialMap);
+  const initialQualityRef = useRef(initialQuality);
+  const cameraSensitivityRef = useRef(cameraSensitivity);
+  cameraSensitivityRef.current = cameraSensitivity;
+  const audioVolumeRef = useRef(audioVolume);
+  const audioManagerRef = useRef<AudioManager | null>(null);
+
+  useEffect(() => {
+    audioVolumeRef.current = audioVolume;
+    audioManagerRef.current?.setMasterVolume(audioVolume);
+  }, [audioVolume]);
 
   const joyInputRef = useRef<{ x: number; y: number; active: boolean }>({
     x: 0,
@@ -3118,6 +2740,19 @@ export const ThirdPersonViewport = forwardRef<
   const quickLoadFnRef = useRef<(() => boolean) | null>(null);
   const loadTestModelFnRef = useRef<((url: string, options?: TestModelLoadOptions) => void) | null>(null);
   const clearTestModelFnRef = useRef<(() => void) | null>(null);
+  const loadMapFnRef = useRef<
+    ((mapData: unknown) => { ok: boolean; error?: string; name?: string }) | null
+  >(null);
+  const setQualityFnRef = useRef<((preset: QualityPreset) => void) | null>(null);
+  const clearCacheFnRef = useRef<(() => Promise<void>) | null>(null);
+  const getCopyPosFnRef = useRef<
+    | (() => {
+        playerPos: [number, number, number];
+        camPos: [number, number, number];
+        colliderJson: string;
+      })
+    | null
+  >(null);
 
   useImperativeHandle(ref, () => ({
     resetPlayer: () => resetFnRef.current?.(),
@@ -3144,6 +2779,16 @@ export const ThirdPersonViewport = forwardRef<
     clearTestModel: () => {
       clearTestModelFnRef.current?.();
     },
+    loadMapFromJSON: (mapData: unknown) =>
+      loadMapFnRef.current?.(mapData) ?? { ok: false, error: 'Motor no inicializado' },
+    setQualityPreset: (preset: QualityPreset) => setQualityFnRef.current?.(preset),
+    clearModelCache: () => clearCacheFnRef.current?.() ?? Promise.resolve(),
+    getPositionCopyPayload: () =>
+      getCopyPosFnRef.current?.() ?? {
+        playerPos: [0, 0, 0],
+        camPos: [0, 0, 0],
+        colliderJson: '{}',
+      },
   }));
 
   useEffect(() => {
@@ -3154,17 +2799,23 @@ export const ThirdPersonViewport = forwardRef<
     let frameId = 0;
 
     const isSoftwareGl = detectSoftwareWebGL();
-    const levelData: LevelJSON = DEFAULT_LEVEL_JSON;
+    const isTouch = detectTouchCapable();
+    let qualityPreset: QualityPreset =
+      initialQualityRef.current ?? (isSoftwareGl || isTouch ? 'low' : 'medium');
+    let baseFogNear = 28;
+    let baseFogFar = 92;
 
-    // Sistemas centrales del motor
     const entityManager = new EntityManager();
     const timeManager = new TimeManager();
     const audioManager = new AudioManager();
+    audioManager.setMasterVolume(audioVolumeRef.current);
+    audioManagerRef.current = audioManager;
+    const engineRaycaster = new EngineRaycaster();
 
     // 1. Scene, Camera & Renderer
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(levelData.skyColor);
-    scene.fog = new THREE.Fog(SCENE_COLORS.skyHex, 28, 78);
+    scene.background = new THREE.Color(SCENE_COLORS.skyCss);
+    scene.fog = new THREE.Fog(SCENE_COLORS.skyHex, baseFogNear, baseFogFar);
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -3172,7 +2823,7 @@ export const ThirdPersonViewport = forwardRef<
       CAMERA_VIEWS[0].fov,
       width / height,
       0.08,
-      150
+      165
     );
 
     const renderer = new THREE.WebGLRenderer({
@@ -3180,13 +2831,9 @@ export const ThirdPersonViewport = forwardRef<
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(
-      isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
-    );
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
-    renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.touchAction = 'none';
@@ -3201,7 +2848,8 @@ export const ThirdPersonViewport = forwardRef<
     pmremGenerator.dispose();
 
     // 2. Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.42));
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.44);
+    scene.add(ambientLight);
 
     const hemiLight = new THREE.HemisphereLight(0xdde8f8, 0x9aa3ad, 0.55);
     hemiLight.position.set(0, 30, 0);
@@ -3209,11 +2857,10 @@ export const ThirdPersonViewport = forwardRef<
 
     const dirLight = new THREE.DirectionalLight(0xfff6ea, 1.85);
     dirLight.position.set(12, 22, 10);
-    dirLight.castShadow = !isSoftwareGl;
     dirLight.shadow.mapSize.set(1024, 1024);
     dirLight.shadow.camera.near = 1;
-    dirLight.shadow.camera.far = 65;
-    const shadowSpan = 20;
+    dirLight.shadow.camera.far = 75;
+    const shadowSpan = 22;
     dirLight.shadow.camera.left = -shadowSpan;
     dirLight.shadow.camera.right = shadowSpan;
     dirLight.shadow.camera.top = shadowSpan;
@@ -3222,6 +2869,47 @@ export const ThirdPersonViewport = forwardRef<
     dirLight.shadow.normalBias = 0.02;
     scene.add(dirLight);
     scene.add(dirLight.target);
+
+    const applyQualityPreset = (preset: QualityPreset) => {
+      qualityPreset = preset;
+      const fogScale = preset === 'low' ? 0.72 : preset === 'high' ? 1.32 : 1.0;
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.near = baseFogNear * (preset === 'low' ? 0.85 : 1.0);
+        scene.fog.far = baseFogFar * fogScale;
+      }
+      const dpr = window.devicePixelRatio || 1;
+      if (isSoftwareGl) {
+        renderer.setPixelRatio(1);
+        renderer.shadowMap.enabled = false;
+        dirLight.castShadow = false;
+        return;
+      }
+      if (preset === 'low') {
+        renderer.setPixelRatio(1.0);
+        renderer.shadowMap.enabled = false;
+        dirLight.castShadow = false;
+      } else if (preset === 'medium') {
+        renderer.setPixelRatio(Math.min(dpr, 1.35));
+        renderer.shadowMap.enabled = true;
+        dirLight.castShadow = true;
+        if (dirLight.shadow.mapSize.x !== 1024) {
+          dirLight.shadow.mapSize.set(1024, 1024);
+          dirLight.shadow.map?.dispose();
+          dirLight.shadow.map = null;
+        }
+      } else {
+        renderer.setPixelRatio(Math.min(dpr, 1.5));
+        renderer.shadowMap.enabled = true;
+        dirLight.castShadow = true;
+        if (dirLight.shadow.mapSize.x !== 2048) {
+          dirLight.shadow.mapSize.set(2048, 2048);
+          dirLight.shadow.map?.dispose();
+          dirLight.shadow.map = null;
+        }
+      }
+    };
+    applyQualityPreset(qualityPreset);
+    setQualityFnRef.current = applyQualityPreset;
 
     // 3. Cannon-es Physics World
     const world = new CANNON.World({
@@ -3261,48 +2949,10 @@ export const ThirdPersonViewport = forwardRef<
       })
     );
 
-    const groundBody = new CANNON.Body({
-      mass: 0,
-      material: groundPhysMat,
-      shape: new CANNON.Plane(),
-    });
-    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    world.addBody(groundBody);
+    const sharedCoreGeometries: THREE.BufferGeometry[] = [];
+    const sharedCoreMaterials: THREE.Material[] = [];
 
-    const groundGeo = new THREE.PlaneGeometry(levelData.ground.size, levelData.ground.size);
-    const groundMeshMat = new THREE.MeshStandardMaterial({
-      color: levelData.ground.color,
-      roughness: 0.92,
-      metalness: 0.02,
-    });
-    const groundMesh = new THREE.Mesh(groundGeo, groundMeshMat);
-    groundMesh.rotation.x = -Math.PI / 2;
-    groundMesh.receiveShadow = true;
-    scene.add(groundMesh);
-
-    const cameraColliders: THREE.Object3D[] = [groundMesh];
-
-    const obstacleMaterials = {
-      block: new THREE.MeshStandardMaterial({
-        color: SCENE_COLORS.blockPrimaryHex,
-        roughness: 0.82,
-        metalness: 0.05,
-      }),
-      platform: new THREE.MeshStandardMaterial({
-        color: SCENE_COLORS.blockSecondaryHex,
-        roughness: 0.78,
-        metalness: 0.08,
-      }),
-      ramp: new THREE.MeshStandardMaterial({
-        color: SCENE_COLORS.rampHex,
-        roughness: 0.85,
-        metalness: 0.04,
-      }),
-      cylinder: new THREE.MeshStandardMaterial({
-        color: SCENE_COLORS.cylinderHex,
-        roughness: 0.76,
-        metalness: 0.1,
-      }),
+    const doorMaterials = {
       doorFrame: new THREE.MeshStandardMaterial({
         color: SCENE_COLORS.doorFrameHex,
         roughness: 0.7,
@@ -3319,91 +2969,23 @@ export const ThirdPersonViewport = forwardRef<
         metalness: 0.85,
       }),
     };
+    sharedCoreMaterials.push(
+      doorMaterials.doorFrame,
+      doorMaterials.doorLeaf,
+      doorMaterials.doorHandle
+    );
 
-    const disposableGeometries: THREE.BufferGeometry[] = [groundGeo];
-    const disposableMaterials: THREE.Material[] = [
-      groundMeshMat,
-      obstacleMaterials.block,
-      obstacleMaterials.platform,
-      obstacleMaterials.ramp,
-      obstacleMaterials.cylinder,
-      obstacleMaterials.doorFrame,
-      obstacleMaterials.doorLeaf,
-      obstacleMaterials.doorHandle,
-    ];
-
-    for (const obs of levelData.obstacles) {
-      if (obs.shape === 'box') {
-        const [sx, sy, sz] = obs.size;
-        const [px, py, pz] = obs.position;
-        const [rx, ry, rz] = obs.rotationEuler ?? [0, 0, 0];
-
-        const boxGeo = new THREE.BoxGeometry(sx, sy, sz);
-        disposableGeometries.push(boxGeo);
-        const boxMesh = new THREE.Mesh(boxGeo, obstacleMaterials[obs.variant]);
-        boxMesh.position.set(px, py, pz);
-        boxMesh.rotation.set(rx, ry, rz);
-        boxMesh.castShadow = true;
-        boxMesh.receiveShadow = true;
-        scene.add(boxMesh);
-        cameraColliders.push(boxMesh);
-
-        const obsBody = new CANNON.Body({
-          mass: 0,
-          material: groundPhysMat,
-          shape: new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2)),
-        });
-        obsBody.position.set(px, py, pz);
-        obsBody.quaternion.setFromEuler(rx, ry, rz);
-        world.addBody(obsBody);
-      } else {
-        const segs = obs.segments ?? 24;
-        const [px, py, pz] = obs.position;
-        const [rx, ry, rz] = obs.rotationEuler ?? [0, 0, 0];
-
-        const cylGeo = new THREE.CylinderGeometry(
-          obs.radiusTop,
-          obs.radiusBottom,
-          obs.height,
-          segs
-        );
-        disposableGeometries.push(cylGeo);
-        const cylMesh = new THREE.Mesh(cylGeo, obstacleMaterials.cylinder);
-        cylMesh.position.set(px, py, pz);
-        cylMesh.rotation.set(rx, ry, rz);
-        cylMesh.castShadow = true;
-        cylMesh.receiveShadow = true;
-        scene.add(cylMesh);
-        cameraColliders.push(cylMesh);
-
-        const cylBody = new CANNON.Body({
-          mass: 0,
-          material: groundPhysMat,
-          shape: new CANNON.Cylinder(
-            obs.radiusTop,
-            obs.radiusBottom,
-            obs.height,
-            segs
-          ),
-        });
-        cylBody.position.set(px, py, pz);
-        cylBody.quaternion.setFromEuler(rx, ry, rz);
-        world.addBody(cylBody);
-      }
-    }
-
-    // Sistema de Camera Shake
+    // Camera Shake
     let shakeIntensity = 0;
     let shakeDuration = 0;
     let shakeTimer = 0;
-
     function triggerCameraShake(intensity: number, duration: number) {
       shakeIntensity = Math.max(shakeIntensity, intensity);
       shakeDuration = Math.max(duration, 0.01);
       shakeTimer = shakeDuration;
     }
 
-    // 4. Entidades registradas en EntityManager (Puerta + Motocicleta + Jugador)
+    // 4. Entidades permanentes (Motocicleta + Jugador)
     const steerState: PlayerSteerInput = {
       dirX: 0,
       dirZ: 0,
@@ -3416,23 +2998,6 @@ export const ThirdPersonViewport = forwardRef<
       steer: 0,
     };
 
-    const doorEntity = entityManager.add(
-      new DoorEntity(
-        levelData.door,
-        scene,
-        world,
-        groundPhysMat,
-        {
-          doorFrame: obstacleMaterials.doorFrame,
-          doorLeaf: obstacleMaterials.doorLeaf,
-          doorHandle: obstacleMaterials.doorHandle,
-        },
-        cameraColliders,
-        disposableGeometries,
-        audioManager
-      )
-    );
-
     let playerEntity: PlayerEntity;
 
     const motorcycleEntity = entityManager.add(
@@ -3441,8 +3006,8 @@ export const ThirdPersonViewport = forwardRef<
         world,
         vehiclePhysMat,
         driveState,
-        disposableGeometries,
-        disposableMaterials,
+        sharedCoreGeometries,
+        sharedCoreMaterials,
         (impactVy) => {
           const factor = THREE.MathUtils.clamp((-impactVy - 7) / 7, 0.4, 1.15);
           triggerCameraShake(0.12 * factor, 0.25);
@@ -3462,7 +3027,7 @@ export const ThirdPersonViewport = forwardRef<
 
     playerEntity = entityManager.add(
       new PlayerEntity(
-        levelData.spawn,
+        PHYSICS_CONFIG.spawnPosition,
         scene,
         world,
         playerPhysMat,
@@ -3476,17 +3041,97 @@ export const ThirdPersonViewport = forwardRef<
       )
     );
 
-    // Espacio reservado en EntityManager para registrar futuras entidades desde levelData.entities
-    const engineRaycaster = new EngineRaycaster();
-    let interactTargetType: InteractTargetType = null;
-    let interactPrompt: string | null = null;
-    let lastReportedKey = '';
+    // 5. Contenedores dinámicos de Mapas JSON
+    const mapGroup = new THREE.Group();
+    scene.add(mapGroup);
+    const mapGeos: THREE.BufferGeometry[] = [];
+    const mapMats: THREE.Material[] = [];
+    const mapMaterialCache = new Map<string, THREE.MeshStandardMaterial>();
+    const mapBodies: CANNON.Body[] = [];
+    const mapDoors: DoorEntity[] = [];
+    const mapDynamicObjects: Array<{ mesh: THREE.Object3D; body: CANNON.Body }> = [];
+    const cameraColliders: THREE.Object3D[] = [];
+    const allInteractTargets: THREE.Object3D[] = [...motorcycleEntity.interactTargets];
+    const triggerSystem = new TriggerSystem(mapGroup, mapGeos, mapMats);
 
-    // 5. Carga de Soldier.glb y Motorcycle.glb (con respaldo procedural si la URL de moto no está disponible)
+    let activeMapName = BUILTIN_MAPS.barrio_urbana.name ?? 'Barrio Urbano';
+    let mapLoadGeneration = 0;
+    let lastTriggerLabel: string | null = null;
+    let boostCooldown = 0;
+    let activeCheckpoint: [number, number, number] = [...PHYSICS_CONFIG.spawnPosition];
+
+    const getCachedMapMaterial = (
+      color: string | number,
+      roughness = 0.82,
+      metalness = 0.06
+    ) => {
+      const key = `${String(color)}|${roughness}|${metalness}`;
+      const existing = mapMaterialCache.get(key);
+      if (existing) return existing;
+      const mat = new THREE.MeshStandardMaterial({ color, roughness, metalness });
+      mapMaterialCache.set(key, mat);
+      mapMats.push(mat);
+      return mat;
+    };
+
+    // Loaders + Gestión de Caché IndexedDB
     const gltfLoader = new GLTFLoader();
-    gltfLoader.load(
-      SOLDIER_MODEL_URL,
-      (gltf) => {
+    const hondaLoadingManager = new THREE.LoadingManager();
+    const transparent1pxPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    hondaLoadingManager.setURLModifier((url) => {
+      if (
+        url === HONDA_MTL_URL ||
+        url === HONDA_OBJ_URL ||
+        url.startsWith('data:') ||
+        url.startsWith('blob:')
+      ) {
+        return url;
+      }
+      return transparent1pxPng;
+    });
+
+    const loadModelCached = async (
+      url: string,
+      typeHint?: 'glb' | 'obj'
+    ): Promise<{ object: THREE.Object3D; animations: THREE.AnimationClip[] }> => {
+      const isObj = typeHint === 'obj' || url.toLowerCase().endsWith('.obj');
+      if (isObj) {
+        const { text } = await modelCacheManager.fetchText(url);
+        const loader = new OBJLoader(hondaLoadingManager);
+        const obj = loader.parse(text);
+        return { object: obj, animations: [] };
+      }
+
+      const cachedProto = modelCacheManager.getClonedObject(url);
+      if (cachedProto) {
+        return { object: cachedProto, animations: [] };
+      }
+      const { buffer } = await modelCacheManager.fetchArrayBuffer(url);
+      const gltf = await new Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>(
+        (resolve, reject) => {
+          gltfLoader.parse(buffer, '', resolve, reject);
+        }
+      );
+      if ((gltf.animations?.length ?? 0) === 0) {
+        modelCacheManager.storeObjectPrototype(url, gltf.scene);
+        return { object: gltf.scene.clone(true), animations: [] };
+      }
+      return { object: gltf.scene, animations: gltf.animations ?? [] };
+    };
+
+    let modelCacheStatus = 'Cargando...';
+
+    // Carga de Soldier.glb con caché IndexedDB
+    (async () => {
+      try {
+        onLoadProgressRef.current(25, false, null);
+        const { buffer } = await modelCacheManager.fetchArrayBuffer(SOLDIER_MODEL_URL);
+        if (disposed) return;
+        onLoadProgressRef.current(75, false, null);
+        const gltf = await new Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }>(
+          (resolve, reject) => gltfLoader.parse(buffer, '', resolve, reject)
+        );
         if (disposed) return;
         const model = gltf.scene;
         model.traverse((child) => {
@@ -3494,22 +3139,17 @@ export const ThirdPersonViewport = forwardRef<
             const mesh = child as THREE.Mesh;
             mesh.castShadow = true;
             mesh.receiveShadow = true;
+            mesh.frustumCulled = true;
           }
         });
 
         const baseMixer = new THREE.AnimationMixer(model);
         playerEntity.baseMixer = baseMixer;
         (['Idle', 'Walk', 'Run', 'TPose'] as const).forEach((clipName) => {
-          const clip = THREE.AnimationClip.findByName(
-            gltf.animations,
-            clipName
-          );
-          if (clip) {
-            playerEntity.actions[clipName] = baseMixer.clipAction(clip);
-          }
+          const clip = THREE.AnimationClip.findByName(gltf.animations, clipName);
+          if (clip) playerEntity.actions[clipName] = baseMixer.clipAction(clip);
         });
 
-        // Capturar pose TPose simétrica y ejes exactos de huesos para conducción en moto
         if (playerEntity.actions.TPose) {
           playerEntity.actions.TPose.reset().setEffectiveWeight(1).play();
           baseMixer.update(0);
@@ -3538,18 +3178,7 @@ export const ThirdPersonViewport = forwardRef<
         playerEntity.maskedUpperBones = upperLayer.maskedBones;
 
         onLoadProgressRef.current(100, true, null);
-      },
-      (progress) => {
-        if (disposed) return;
-        if (progress.total > 0) {
-          const pct = Math.min(
-            99,
-            Math.round((progress.loaded / progress.total) * 100)
-          );
-          onLoadProgressRef.current(pct, false, null);
-        }
-      },
-      () => {
+      } catch {
         if (disposed) return;
         const fallback = createProceduralFallbackCharacter();
         playerEntity.alignModelToCapsuleBase(fallback);
@@ -3559,246 +3188,46 @@ export const ThirdPersonViewport = forwardRef<
         onLoadProgressRef.current(
           100,
           true,
-          'No se pudo descargar Soldier.glb desde GitHub; usando modelo de respaldo.'
+          'No se pudo descargar Soldier.glb; usando modelo de respaldo.'
         );
       }
-    );
+    })();
 
-    // Carga de Honda CB 750 en OBJ/MTL con caché compartida de materiales
-    const hondaPaletteCache: { current: HondaMaterialPalette | null } = { current: null };
-    const hondaRawBase =
-      'https://raw.githubusercontent.com/SteelRandom/3D-Test/refs/heads/main/';
-    const transparent1pxPng =
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-    const hondaLoadingManager = new THREE.LoadingManager();
-    hondaLoadingManager.setURLModifier((url) => {
-      if (
-        url === HONDA_MTL_URL ||
-        url === HONDA_OBJ_URL ||
-        url.startsWith('data:') ||
-        url.startsWith('blob:')
-      ) {
-        return url;
-      }
-      return transparent1pxPng;
-    });
-
-    const mtlLoader = new MTLLoader(hondaLoadingManager);
-    mtlLoader.setResourcePath(hondaRawBase);
-    const loadHondaObj = (materials?: MTLLoader.MaterialCreator) => {
-      const objLoader = new OBJLoader(hondaLoadingManager);
-      if (materials) {
-        materials.preload();
-        objLoader.setMaterials(materials);
-      }
-      objLoader.load(
-        HONDA_OBJ_URL,
-        (object) => {
-          if (disposed) return;
-          motorcycleEntity.attachHondaObjModel(
-            object,
-            hondaPaletteCache,
-            disposableGeometries,
-            disposableMaterials
-          );
-        },
-        undefined,
-        () => {
-          // Mantiene respaldo procedural si falla la descarga desde GitHub
-        }
-      );
-    };
-
-    mtlLoader.load(
-      HONDA_MTL_URL,
-      (materials) => {
+    // Carga de Honda CB 750 OBJ/MTL con caché persistente IndexedDB + fusión agresiva de geometría
+    const loadHondaFromCacheOrNetwork = async () => {
+      try {
+        const [mtlRes, objRes] = await Promise.all([
+          modelCacheManager.fetchText(HONDA_MTL_URL).catch(() => null),
+          modelCacheManager.fetchText(HONDA_OBJ_URL),
+        ]);
         if (disposed) return;
-        loadHondaObj(materials);
-      },
-      undefined,
-      () => {
-        if (disposed) return;
-        loadHondaObj();
-      }
-    );
 
-    // Triggers de prueba en escena (impulso en la rampa + checkpoint en plataforma)
-    const triggerSystem = new TriggerSystem(scene, disposableGeometries, disposableMaterials);
-    let lastTriggerLabel: string | null = null;
-    let boostCooldown = 0;
-
-    triggerSystem.createTrigger({
-      id: 'trigger-ramp-boost',
-      label: 'Impulso Rampa',
-      position: [0, 0.35, -2.1],
-      size: [2.6, 1.1, 1.6],
-      color: 0x06b6d4,
-      visible: true,
-      onEnter: ({ actorType, body }) => {
-        lastTriggerLabel = 'Impulso Rampa (activo)';
-        if (boostCooldown <= 0) {
-          boostCooldown = 0.65;
-          if (actorType === 'motorcycle') {
-            body.velocity.z -= 5.2;
-            body.velocity.y = Math.max(body.velocity.y, 1.5);
-          } else {
-            body.velocity.z -= 4.2;
-            body.velocity.y = Math.max(body.velocity.y, 3.6);
-          }
-          audioManager.playSound('jump', { volume: 0.55 });
-        }
-      },
-      onExit: () => {
-        lastTriggerLabel = 'Impulso Rampa (completado)';
-      },
-    });
-
-    triggerSystem.createTrigger({
-      id: 'trigger-platform-checkpoint',
-      label: 'Checkpoint Plataforma',
-      position: [0, 1.9, -10.2],
-      size: [3.0, 1.4, 3.0],
-      color: 0x10b981,
-      visible: true,
-      onEnter: () => {
-        lastTriggerLabel = 'Checkpoint Plataforma';
-        audioManager.playSound('door_open', { volume: 0.45 });
-      },
-      onExit: () => {
-        lastTriggerLabel = 'Salió de Checkpoint';
-      },
-    });
-
-    // Cargador rápido de modelos externos de prueba (.glb / .gltf / .obj)
-    let activeTestModelRoot: THREE.Object3D | null = null;
-    let activeTestModelMixer: THREE.AnimationMixer | null = null;
-    let activeTestModelUrl: string | null = null;
-    let testModelStatus: string | null = null;
-    const testModelGeos: THREE.BufferGeometry[] = [];
-    const testModelMats: THREE.Material[] = [];
-
-    const clearTestModel = () => {
-      if (activeTestModelMixer) {
-        activeTestModelMixer.stopAllAction();
-        activeTestModelMixer = null;
-      }
-      if (activeTestModelRoot) {
-        scene.remove(activeTestModelRoot);
-        activeTestModelRoot = null;
-      }
-      for (let i = 0; i < testModelGeos.length; i++) testModelGeos[i].dispose();
-      testModelGeos.length = 0;
-      for (let i = 0; i < testModelMats.length; i++) testModelMats[i].dispose();
-      testModelMats.length = 0;
-      activeTestModelUrl = null;
-      testModelStatus = null;
-    };
-    clearTestModelFnRef.current = clearTestModel;
-
-    const finalizeTestModel = (
-      loadedRoot: THREE.Object3D,
-      animations: THREE.AnimationClip[],
-      url: string,
-      options: TestModelLoadOptions
-    ) => {
-      if (disposed) return;
-      if (options.replacePrevious !== false) {
-        clearTestModel();
-      }
-      const pos = options.position ?? [4.8, 0, 2.2];
-      const targetSize = options.targetSize ?? 1.6;
-      const allowShadow = options.castShadow !== false;
-
-      const wrapper = new THREE.Group();
-      wrapper.add(loadedRoot);
-      wrapper.updateMatrixWorld(true);
-      _tmpBox3A.setFromObject(wrapper, true);
-      _tmpBox3A.getSize(_tmpVec3A);
-      const maxDim = Math.max(_tmpVec3A.x, _tmpVec3A.y, _tmpVec3A.z, 0.001);
-      const scale = targetSize / maxDim;
-      loadedRoot.scale.setScalar(scale);
-      _tmpBox3A.getCenter(_tmpVec3B);
-      loadedRoot.position.set(
-        -_tmpVec3B.x * scale,
-        -_tmpBox3A.min.y * scale,
-        -_tmpVec3B.z * scale
-      );
-      wrapper.position.set(pos[0], pos[1], pos[2]);
-
-      const palette = url.toLowerCase().includes('honda')
-        ? getCachedHondaMaterialPalette(hondaPaletteCache, disposableMaterials)
-        : null;
-
-      loadedRoot.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          if (mesh.geometry) {
-            testModelGeos.push(mesh.geometry);
-            mesh.geometry.computeBoundingBox();
-          }
-          if (palette) {
-            const oldMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-            const res = resolveHondaPartMaterial(mesh.name, oldMat?.name ?? '', palette);
-            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m?.dispose());
-            else oldMat?.dispose();
-            mesh.material = res.material;
-          } else if (Array.isArray(mesh.material)) {
-            mesh.material.forEach((m) => m && testModelMats.push(m));
-          } else if (mesh.material) {
-            testModelMats.push(mesh.material);
-          }
-          const bb = mesh.geometry?.boundingBox;
-          const partMaxDim = bb
-            ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * scale
-            : targetSize;
-          const cast = allowShadow && partMaxDim >= 0.25;
-          mesh.castShadow = cast;
-          mesh.receiveShadow = cast;
-        }
-      });
-
-      if (animations.length > 0) {
-        activeTestModelMixer = new THREE.AnimationMixer(loadedRoot);
-        activeTestModelMixer.clipAction(animations[0]).play();
-      }
-      scene.add(wrapper);
-      activeTestModelRoot = wrapper;
-      activeTestModelUrl = url;
-      const shortName = url.split('/').pop() || 'modelo';
-      testModelStatus = `Cargado: ${shortName}`;
-    };
-
-    const loadTestModel = (url: string, options: TestModelLoadOptions = {}) => {
-      const trimmed = url.trim();
-      if (!trimmed) return;
-      const lower = trimmed.toLowerCase();
-      testModelStatus = 'Cargando...';
-
-      if (lower.endsWith('.obj')) {
         const objLoader = new OBJLoader(hondaLoadingManager);
-        objLoader.load(
-          trimmed,
-          (obj) => finalizeTestModel(obj, [], trimmed, options),
-          undefined,
-          () => {
-            if (!disposed) testModelStatus = 'Error al cargar OBJ';
-          }
+        if (mtlRes) {
+          const mtlLoader = new MTLLoader(hondaLoadingManager);
+          const mats = mtlLoader.parse(mtlRes.text, '');
+          mats.preload();
+          objLoader.setMaterials(mats);
+        }
+        const parsedObj = objLoader.parse(objRes.text);
+        motorcycleEntity.attachHondaObjModel(
+          parsedObj,
+          sharedCoreGeometries,
+          sharedCoreMaterials
         );
-      } else {
-        gltfLoader.load(
-          trimmed,
-          (gltf) => finalizeTestModel(gltf.scene, gltf.animations ?? [], trimmed, options),
-          undefined,
-          () => {
-            if (!disposed) testModelStatus = 'Error al cargar GLB';
-          }
-        );
+        modelCacheStatus = `Honda: ${modelCacheManager.getSourceLabel(HONDA_OBJ_URL)}`;
+      } catch {
+        modelCacheStatus = 'Honda: respaldo procedural';
       }
     };
-    loadTestModelFnRef.current = loadTestModel;
-    (window as unknown as { loadTestModel?: typeof loadTestModel }).loadTestModel = loadTestModel;
+    loadHondaFromCacheOrNetwork();
 
-    // 6. Estado de cámara (TPS + FPS real con brazos visibles) e inputs
+    clearCacheFnRef.current = async () => {
+      await modelCacheManager.clearAll();
+      modelCacheStatus = 'Caché limpiada (próxima carga de red)';
+    };
+
+    // 6. Estado de cámara y controles
     const keys: Record<string, boolean> = Object.create(null);
 
     let cameraMode: CameraMode = 'TPS';
@@ -3835,10 +3264,566 @@ export const ThirdPersonViewport = forwardRef<
     camera.position.copy(currentCamPos);
     camera.lookAt(currentLookAt);
 
+    // =========================================================================
+    // Lector de Mapas JSON (`loadMapFromJSON`)
+    // =========================================================================
+    const clearCurrentMap = () => {
+      mapLoadGeneration += 1;
+      for (let i = 0; i < mapDoors.length; i++) {
+        entityManager.remove(mapDoors[i].id);
+      }
+      mapDoors.length = 0;
+
+      for (let i = 0; i < mapBodies.length; i++) {
+        world.removeBody(mapBodies[i]);
+      }
+      mapBodies.length = 0;
+      mapDynamicObjects.length = 0;
+
+      triggerSystem.clear();
+
+      while (mapGroup.children.length > 0) {
+        mapGroup.remove(mapGroup.children[0]);
+      }
+      for (let i = 0; i < mapGeos.length; i++) {
+        mapGeos[i].dispose();
+      }
+      mapGeos.length = 0;
+      for (let i = 0; i < mapMats.length; i++) {
+        mapMats[i].dispose();
+      }
+      mapMats.length = 0;
+      mapMaterialCache.clear();
+
+      cameraColliders.length = 0;
+      allInteractTargets.length = 0;
+      allInteractTargets.push(...motorcycleEntity.interactTargets);
+      lastTriggerLabel = null;
+    };
+
+    const loadMapFromJSON = (
+      rawMapData: unknown
+    ): { ok: boolean; error?: string; name?: string } => {
+      let parsedData = rawMapData;
+      if (typeof rawMapData === 'string') {
+        try {
+          parsedData = JSON.parse(rawMapData);
+        } catch (err) {
+          return {
+            ok: false,
+            error: `JSON inválido: ${(err as Error).message}`,
+          };
+        }
+      }
+
+      let mapData: NormalizedMapJSON;
+      try {
+        mapData = normalizeMapJSON(parsedData);
+      } catch (err) {
+        return {
+          ok: false,
+          error: (err as Error).message,
+        };
+      }
+
+      clearCurrentMap();
+      const generationToken = mapLoadGeneration;
+      activeMapName = mapData.name;
+
+      // 1. Entorno
+      scene.background = new THREE.Color(mapData.environment.bgColor);
+      baseFogNear = mapData.environment.fogNear;
+      baseFogFar = mapData.environment.fogFar;
+      const fogScale =
+        qualityPreset === 'low' ? 0.72 : qualityPreset === 'high' ? 1.32 : 1.0;
+      scene.fog = new THREE.Fog(
+        mapData.environment.fogColor,
+        baseFogNear * (qualityPreset === 'low' ? 0.85 : 1.0),
+        baseFogFar * fogScale
+      );
+      ambientLight.intensity = mapData.environment.ambientIntensity;
+      dirLight.intensity = mapData.environment.dirIntensity;
+
+      // 2. Suelo
+      if (mapData.ground.physics) {
+        const groundBody = new CANNON.Body({
+          mass: 0,
+          material: groundPhysMat,
+          shape: new CANNON.Plane(),
+        });
+        groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        world.addBody(groundBody);
+        mapBodies.push(groundBody);
+      }
+
+      if (mapData.ground.visible) {
+        const gGeo = new THREE.PlaneGeometry(mapData.ground.size, mapData.ground.size);
+        mapGeos.push(gGeo);
+        const gMat = getCachedMapMaterial(mapData.ground.color, 0.92, 0.02);
+        const gMesh = new THREE.Mesh(gGeo, gMat);
+        gMesh.rotation.x = -Math.PI / 2;
+        gMesh.receiveShadow = true;
+        mapGroup.add(gMesh);
+        cameraColliders.push(gMesh);
+      }
+
+      // 3. Colliders (visibles o invisibles para mapModel)
+      for (const col of mapData.colliders) {
+        const [px, py, pz] = col.pos;
+        const [rx, ry, rz] = col.rot ?? [0, 0, 0];
+        const [sx, sy, sz] = col.scale;
+        const mass = col.mass ?? 0;
+
+        if (col.type === 'cylinder') {
+          const radius = Math.max(0.1, sx * 0.5);
+          const height = Math.max(0.1, sy);
+          const body = new CANNON.Body({
+            mass,
+            material: groundPhysMat,
+            shape: new CANNON.Cylinder(radius, radius, height, 20),
+          });
+          body.position.set(px, py, pz);
+          body.quaternion.setFromEuler(rx, ry, rz);
+          world.addBody(body);
+          mapBodies.push(body);
+
+          if (col.visible !== false) {
+            const geo = new THREE.CylinderGeometry(radius, radius, height, 20);
+            mapGeos.push(geo);
+            const mat = getCachedMapMaterial(
+              col.color ?? SCENE_COLORS.cylinderHex,
+              0.78,
+              0.08
+            );
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(px, py, pz);
+            mesh.rotation.set(rx, ry, rz);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mapGroup.add(mesh);
+            cameraColliders.push(mesh);
+            if (mass > 0) mapDynamicObjects.push({ mesh, body });
+          }
+        } else {
+          const body = new CANNON.Body({
+            mass,
+            material: groundPhysMat,
+            shape: new CANNON.Box(new CANNON.Vec3(sx * 0.5, sy * 0.5, sz * 0.5)),
+          });
+          body.position.set(px, py, pz);
+          body.quaternion.setFromEuler(rx, ry, rz);
+          world.addBody(body);
+          mapBodies.push(body);
+
+          if (col.visible !== false) {
+            const geo = new THREE.BoxGeometry(sx, sy, sz);
+            mapGeos.push(geo);
+            const mat = getCachedMapMaterial(
+              col.color ??
+                (col.type === 'ramp'
+                  ? SCENE_COLORS.rampHex
+                  : SCENE_COLORS.blockPrimaryHex),
+              0.82,
+              0.06
+            );
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(px, py, pz);
+            mesh.rotation.set(rx, ry, rz);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mapGroup.add(mesh);
+            cameraColliders.push(mesh);
+            if (mass > 0) mapDynamicObjects.push({ mesh, body });
+          }
+        }
+      }
+
+      // 4. Objetos y Props (primitivos o modelos externos con frustumCulling + caché)
+      for (const obj of mapData.objects) {
+        const [px, py, pz] = obj.pos;
+        const [rx, ry, rz] = obj.rot ?? [0, 0, 0];
+        const scaleVec: [number, number, number] =
+          typeof obj.scale === 'number'
+            ? [obj.scale, obj.scale, obj.scale]
+            : obj.scale ?? [1, 1, 1];
+        const [sx, sy, sz] = scaleVec;
+
+        if (obj.type === 'model' && obj.url) {
+          const modelUrl = obj.url;
+          loadModelCached(modelUrl)
+            .then(({ object: loaded }) => {
+              if (disposed || generationToken !== mapLoadGeneration) return;
+              loaded.position.set(px, py, pz);
+              loaded.rotation.set(rx, ry, rz);
+              loaded.scale.set(sx, sy, sz);
+              const allowCast = obj.castShadow !== false;
+              loaded.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                  const m = child as THREE.Mesh;
+                  m.frustumCulled = true;
+                  m.castShadow = allowCast;
+                  m.receiveShadow = true;
+                }
+              });
+              mapGroup.add(loaded);
+              cameraColliders.push(loaded);
+              if (obj.physics) {
+                _tmpBox3A.setFromObject(loaded);
+                _tmpBox3A.getSize(_tmpVec3A);
+                const b = new CANNON.Body({
+                  mass: obj.mass ?? 15,
+                  material: groundPhysMat,
+                  shape: new CANNON.Box(
+                    new CANNON.Vec3(
+                      Math.max(0.15, _tmpVec3A.x * 0.5),
+                      Math.max(0.15, _tmpVec3A.y * 0.5),
+                      Math.max(0.15, _tmpVec3A.z * 0.5)
+                    )
+                  ),
+                });
+                b.position.set(px, py, pz);
+                b.quaternion.setFromEuler(rx, ry, rz);
+                world.addBody(b);
+                mapBodies.push(b);
+                if ((obj.mass ?? 15) > 0) mapDynamicObjects.push({ mesh: loaded, body: b });
+              }
+            })
+            .catch(() => {});
+          continue;
+        }
+
+        const geo =
+          obj.type === 'cylinder'
+            ? new THREE.CylinderGeometry(sx * 0.5, sx * 0.5, sy, 20)
+            : new THREE.BoxGeometry(sx, sy, sz);
+        mapGeos.push(geo);
+        const mat = getCachedMapMaterial(
+          obj.color ?? SCENE_COLORS.blockSecondaryHex,
+          0.72,
+          0.12
+        );
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(px, py, pz);
+        mesh.rotation.set(rx, ry, rz);
+        mesh.castShadow = obj.castShadow !== false;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = true;
+        mapGroup.add(mesh);
+        cameraColliders.push(mesh);
+
+        if (obj.physics) {
+          const mass = obj.mass ?? 15;
+          const shape =
+            obj.type === 'cylinder'
+              ? new CANNON.Cylinder(sx * 0.5, sx * 0.5, sy, 20)
+              : new CANNON.Box(new CANNON.Vec3(sx * 0.5, sy * 0.5, sz * 0.5));
+          const body = new CANNON.Body({
+            mass,
+            material: groundPhysMat,
+            shape,
+          });
+          body.position.set(px, py, pz);
+          body.quaternion.setFromEuler(rx, ry, rz);
+          world.addBody(body);
+          mapBodies.push(body);
+          if (mass > 0) {
+            mapDynamicObjects.push({ mesh, body });
+          }
+        }
+      }
+
+      // 5. Modelo visual completo de mapa externo (sin colisionadores pesados de triángulos)
+      if (mapData.mapModel) {
+        const mm = mapData.mapModel;
+        loadModelCached(mm.url, mm.type)
+          .then(({ object: loaded }) => {
+            if (disposed || generationToken !== mapLoadGeneration) return;
+            const [px, py, pz] = mm.pos ?? [0, 0, 0];
+            const [rx, ry, rz] = mm.rot ?? [0, 0, 0];
+            const sc =
+              typeof mm.scale === 'number'
+                ? ([mm.scale, mm.scale, mm.scale] as [number, number, number])
+                : mm.scale ?? [1, 1, 1];
+            loaded.position.set(px, py, pz);
+            loaded.rotation.set(rx, ry, rz);
+            loaded.scale.set(sc[0], sc[1], sc[2]);
+
+            const cachedMatMap = new Map<string, THREE.Material>();
+            loaded.traverse((child) => {
+              if ((child as THREE.Mesh).isMesh) {
+                const m = child as THREE.Mesh;
+                m.frustumCulled = true;
+                m.receiveShadow = mm.receiveShadow !== false;
+                if (m.geometry) {
+                  m.geometry.computeBoundingBox();
+                  m.geometry.computeBoundingSphere();
+                  mapGeos.push(m.geometry);
+                }
+                const bb = m.geometry?.boundingBox;
+                const maxDim = bb
+                  ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) *
+                    Math.max(sc[0], sc[1], sc[2])
+                  : 1;
+                m.castShadow = Boolean(mm.castShadow) && maxDim >= 0.45;
+                if (mm.type === 'obj' && m.material && !Array.isArray(m.material)) {
+                  const orig = m.material as THREE.MeshStandardMaterial;
+                  const matKey = `${orig.name}|${orig.color?.getHexString?.() ?? 'fff'}`;
+                  if (cachedMatMap.has(matKey)) {
+                    orig.dispose();
+                    m.material = cachedMatMap.get(matKey)!;
+                  } else {
+                    cachedMatMap.set(matKey, orig);
+                    mapMats.push(orig);
+                  }
+                }
+              }
+            });
+            mapGroup.add(loaded);
+          })
+          .catch(() => {});
+      }
+
+      // 6. Puertas
+      for (const doorCfg of mapData.doors) {
+        const door = entityManager.add(
+          new DoorEntity(
+            doorCfg,
+            mapGroup,
+            world,
+            groundPhysMat,
+            doorMaterials,
+            cameraColliders,
+            mapGeos,
+            audioManager
+          )
+        );
+        mapDoors.push(door);
+        allInteractTargets.push(...door.interactTargets);
+      }
+
+      // 7. Triggers
+      for (let i = 0; i < mapData.triggers.length; i++) {
+        const trg = mapData.triggers[i];
+        triggerSystem.createTrigger({
+          id: trg.id ?? `trigger_${i + 1}`,
+          label: trg.label ?? trg.action,
+          position: trg.pos,
+          size: trg.size,
+          color: trg.color ?? 0x0ea5e9,
+          visible: trg.visible !== false,
+          onEnter: ({ actorType, body }) => {
+            if (trg.action === 'boost') {
+              const boostAmt = typeof trg.value === 'number' ? trg.value : 6.5;
+              lastTriggerLabel = trg.label ?? 'Impulso';
+              if (boostCooldown <= 0) {
+                boostCooldown = 0.55;
+                if (actorType === 'motorcycle') {
+                  _bikeQuat.set(
+                    body.quaternion.x,
+                    body.quaternion.y,
+                    body.quaternion.z,
+                    body.quaternion.w
+                  );
+                  _bikeFwd.set(0, 0, -1).applyQuaternion(_bikeQuat);
+                  _bikeFwd.y = 0;
+                  if (_bikeFwd.lengthSq() > 0.001) _bikeFwd.normalize();
+                  body.velocity.x += _bikeFwd.x * boostAmt;
+                  body.velocity.z += _bikeFwd.z * boostAmt;
+                  body.velocity.y = Math.max(body.velocity.y, 1.5);
+                } else {
+                  body.velocity.z -= boostAmt * 0.7;
+                  body.velocity.y = Math.max(body.velocity.y, 3.6);
+                }
+                audioManager.playSound('jump', { volume: 0.55 });
+              }
+            } else if (trg.action === 'checkpoint') {
+              activeCheckpoint = [trg.pos[0], Math.max(trg.pos[1], 1.1), trg.pos[2]];
+              lastTriggerLabel = trg.label ?? 'Checkpoint activado';
+              audioManager.playSound('door_open', { volume: 0.45 });
+            } else if (trg.action === 'teleport') {
+              const dest =
+                trg.target ??
+                (Array.isArray(trg.value) ? trg.value : mapData.spawn.player);
+              lastTriggerLabel = trg.label ?? 'Teletransporte';
+              if (actorType === 'motorcycle') {
+                motorcycleEntity.reset([dest[0], Math.max(dest[1], 0.6), dest[2]], motorcycleEntity.headingYaw);
+              } else {
+                body.position.set(dest[0], Math.max(dest[1], 1.0), dest[2]);
+                body.velocity.set(0, 0, 0);
+                playerEntity.syncInterpolationBuffers();
+              }
+              audioManager.playSound('mount', { volume: 0.55 });
+            }
+          },
+          onExit: () => {
+            if (trg.action === 'boost') {
+              lastTriggerLabel = `${trg.label ?? 'Impulso'} (ok)`;
+            }
+          },
+        });
+      }
+
+      // 8. Reubicar jugador y moto al spawn del mapa (desmontar/salir de ragdoll si aplica)
+      if (playerEntity.isRagdoll) {
+        playerEntity.recoverFromRagdoll(mapData.spawn.bikeRotY);
+      }
+      if (motorcycleEntity.isMounted) {
+        motorcycleEntity.isMounted = false;
+        playerEntity.dismountAt(
+          new THREE.Vector3(
+            mapData.spawn.player[0],
+            mapData.spawn.player[1],
+            mapData.spawn.player[2]
+          ),
+          mapData.spawn.bikeRotY
+        );
+      }
+      activeCheckpoint = [...mapData.spawn.player];
+      playerEntity.setSpawn(mapData.spawn.player);
+      motorcycleEntity.setSpawn(mapData.spawn.bike, mapData.spawn.bikeRotY);
+      playerEntity.reset(mapData.spawn.player);
+      motorcycleEntity.reset(mapData.spawn.bike, mapData.spawn.bikeRotY);
+      prevBikeYaw = mapData.spawn.bikeRotY;
+      camYaw = 0;
+      pitchOffset = 0;
+      fpsPitch = 0;
+      fpsLookYawOffset = 0;
+
+      return { ok: true, name: mapData.name };
+    };
+
+    loadMapFnRef.current = loadMapFromJSON;
+    (window as unknown as { loadMapFromJSON?: typeof loadMapFromJSON }).loadMapFromJSON =
+      loadMapFromJSON;
+
+    // Carga mapa inicial por defecto o mapa elegido desde el Menú
+    loadMapFromJSON(initialMapRef.current ?? BUILTIN_MAPS.barrio_urbana);
+
+    // Cargador rápido de modelos externos de prueba (.glb / .gltf / .obj)
+    let activeTestModelRoot: THREE.Object3D | null = null;
+    let activeTestModelMixer: THREE.AnimationMixer | null = null;
+    let activeTestModelUrl: string | null = null;
+    let testModelStatus: string | null = null;
+    const testModelGeos: THREE.BufferGeometry[] = [];
+    const testModelMats: THREE.Material[] = [];
+
+    const clearTestModel = () => {
+      if (activeTestModelMixer) {
+        activeTestModelMixer.stopAllAction();
+        activeTestModelMixer = null;
+      }
+      if (activeTestModelRoot) {
+        scene.remove(activeTestModelRoot);
+        activeTestModelRoot = null;
+      }
+      for (let i = 0; i < testModelGeos.length; i++) testModelGeos[i].dispose();
+      testModelGeos.length = 0;
+      for (let i = 0; i < testModelMats.length; i++) testModelMats[i].dispose();
+      testModelMats.length = 0;
+      activeTestModelUrl = null;
+      testModelStatus = null;
+    };
+    clearTestModelFnRef.current = clearTestModel;
+
+    const finalizeTestModel = (
+      loadedRoot: THREE.Object3D,
+      animations: THREE.AnimationClip[],
+      url: string,
+      options: TestModelLoadOptions
+    ) => {
+      if (disposed) return;
+      if (options.replacePrevious !== false) clearTestModel();
+      const pos = options.position ?? [4.8, 0, 2.2];
+      const targetSize = options.targetSize ?? 1.6;
+      const allowShadow = options.castShadow !== false;
+
+      const wrapper = new THREE.Group();
+      wrapper.add(loadedRoot);
+      wrapper.updateMatrixWorld(true);
+      _tmpBox3A.setFromObject(wrapper, true);
+      _tmpBox3A.getSize(_tmpVec3A);
+      const maxDim = Math.max(_tmpVec3A.x, _tmpVec3A.y, _tmpVec3A.z, 0.001);
+      const scale = targetSize / maxDim;
+      loadedRoot.scale.setScalar(scale);
+      _tmpBox3A.getCenter(_tmpVec3B);
+      loadedRoot.position.set(
+        -_tmpVec3B.x * scale,
+        -_tmpBox3A.min.y * scale,
+        -_tmpVec3B.z * scale
+      );
+      wrapper.position.set(pos[0], pos[1], pos[2]);
+
+      const isHonda = url.toLowerCase().includes('honda');
+      const testMatCache = new Map<number, THREE.MeshStandardMaterial>();
+
+      loadedRoot.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          mesh.frustumCulled = true;
+          if (mesh.geometry) {
+            testModelGeos.push(mesh.geometry);
+            mesh.geometry.computeBoundingBox();
+            mesh.geometry.computeBoundingSphere();
+          }
+          if (isHonda) {
+            const oldMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+            const vis = resolveHondaPartVisual(mesh.name, oldMat?.name ?? '');
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m?.dispose());
+            else oldMat?.dispose();
+            let cached = testMatCache.get(vis.hex);
+            if (!cached) {
+              cached = new THREE.MeshStandardMaterial({
+                color: vis.hex,
+                metalness: vis.isMetal ? 0.85 : 0.2,
+                roughness: vis.isMetal ? 0.25 : 0.55,
+              });
+              testMatCache.set(vis.hex, cached);
+              testModelMats.push(cached);
+            }
+            mesh.material = cached;
+          } else if (Array.isArray(mesh.material)) {
+            mesh.material.forEach((m) => m && testModelMats.push(m));
+          } else if (mesh.material) {
+            testModelMats.push(mesh.material);
+          }
+          const bb = mesh.geometry?.boundingBox;
+          const partMaxDim = bb
+            ? Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * scale
+            : targetSize;
+          const cast = allowShadow && partMaxDim >= 0.28;
+          mesh.castShadow = cast;
+          mesh.receiveShadow = cast;
+        }
+      });
+
+      if (animations.length > 0) {
+        activeTestModelMixer = new THREE.AnimationMixer(loadedRoot);
+        activeTestModelMixer.clipAction(animations[0]).play();
+      }
+      scene.add(wrapper);
+      activeTestModelRoot = wrapper;
+      activeTestModelUrl = url;
+      const shortName = url.split('/').pop() || 'modelo';
+      testModelStatus = `${shortName} (${modelCacheManager.getSourceLabel(url)})`;
+    };
+
+    const loadTestModel = (url: string, options: TestModelLoadOptions = {}) => {
+      const trimmed = url.trim();
+      if (!trimmed) return;
+      testModelStatus = 'Cargando...';
+      loadModelCached(trimmed)
+        .then(({ object, animations }) => finalizeTestModel(object, animations, trimmed, options))
+        .catch(() => {
+          if (!disposed) testModelStatus = 'Error al cargar modelo';
+        });
+    };
+    loadTestModelFnRef.current = loadTestModel;
+    (window as unknown as { loadTestModel?: typeof loadTestModel }).loadTestModel = loadTestModel;
+
+    // 7. World physics step hooks
     world.addEventListener('preStep', () => {
       entityManager.fixedUpdate(PHYSICS_CONFIG.fixedTimeStep);
     });
-
     world.addEventListener('postStep', () => {
       playerEntity.capturePostStep();
       motorcycleEntity.capturePostStep();
@@ -3887,14 +3872,10 @@ export const ThirdPersonViewport = forwardRef<
     };
     toggleFreeCamFnRef.current = toggleFreeCam;
 
-    const togglePause = () => {
-      timeManager.togglePause();
-    };
+    const togglePause = () => timeManager.togglePause();
     togglePauseFnRef.current = togglePause;
 
-    const toggleSlowMotion = () => {
-      timeManager.toggleSlowMotion();
-    };
+    const toggleSlowMotion = () => timeManager.toggleSlowMotion();
     toggleSlowMotionFnRef.current = toggleSlowMotion;
 
     const toggleWave = () => {
@@ -3911,9 +3892,7 @@ export const ThirdPersonViewport = forwardRef<
       prevBikeYaw = motorcycleEntity.headingYaw;
       camYaw = motorcycleEntity.headingYaw;
       fpsLookYawOffset = 0;
-      if (cameraMode === 'FPS') {
-        fpsPitch = -0.14;
-      }
+      if (cameraMode === 'FPS') fpsPitch = -0.14;
     };
 
     const dismountMotorcycle = () => {
@@ -3961,10 +3940,7 @@ export const ThirdPersonViewport = forwardRef<
             speed: motorcycleEntity.currentForwardSpeed,
             yaw: motorcycleEntity.headingYaw,
           },
-          door: {
-            open: doorEntity.doorOpen,
-            angle: doorEntity.currentAngle,
-          },
+          doors: mapDoors.map((d) => ({ open: d.doorOpen, angle: d.currentAngle })),
           testModelUrl: activeTestModelUrl,
         };
         window.localStorage.setItem(QUICKSAVE_STORAGE_KEY, JSON.stringify(snapshot));
@@ -4025,9 +4001,12 @@ export const ThirdPersonViewport = forwardRef<
           camYaw = snap.player.camYaw ?? 0;
           prevBikeYaw = motorcycleEntity.headingYaw;
         }
-        if (snap.door) {
-          doorEntity.doorOpen = Boolean(snap.door.open);
-          doorEntity.currentAngle = snap.door.angle ?? (doorEntity.doorOpen ? Math.PI * 0.5 : 0);
+        if (Array.isArray(snap.doors)) {
+          for (let i = 0; i < Math.min(snap.doors.length, mapDoors.length); i++) {
+            mapDoors[i].doorOpen = Boolean(snap.doors[i].open);
+            mapDoors[i].currentAngle =
+              snap.doors[i].angle ?? (mapDoors[i].doorOpen ? Math.PI * 0.5 : 0);
+          }
         }
         if (snap.testModelUrl && snap.testModelUrl !== activeTestModelUrl) {
           loadTestModel(snap.testModelUrl);
@@ -4042,6 +4021,11 @@ export const ThirdPersonViewport = forwardRef<
       }
     };
     quickLoadFnRef.current = quickLoad;
+
+    let interactTargetType: InteractTargetType = null;
+    let interactTargetDoor: DoorEntity | null = null;
+    let interactPrompt: string | null = null;
+    let lastReportedKey = '';
 
     const interact = () => {
       audioManager.unlock();
@@ -4058,17 +4042,17 @@ export const ThirdPersonViewport = forwardRef<
       }
       if (interactTargetType === 'motorcycle') {
         mountMotorcycle();
-      } else if (interactTargetType === 'door') {
-        doorEntity.toggle();
+      } else if (interactTargetType === 'door' && interactTargetDoor) {
+        interactTargetDoor.toggle();
       }
     };
     interactFnRef.current = interact;
 
     resetFnRef.current = () => {
-      playerEntity.reset();
+      playerEntity.reset(activeCheckpoint);
       motorcycleEntity.reset();
       motorcycleEntity.isMounted = false;
-      doorEntity.reset();
+      for (let i = 0; i < mapDoors.length; i++) mapDoors[i].reset();
       triggerSystem.reset();
       lastTriggerLabel = null;
       saveStatus = null;
@@ -4087,10 +4071,36 @@ export const ThirdPersonViewport = forwardRef<
       shakeIntensity = 0;
     };
 
+    getCopyPosFnRef.current = () => {
+      const pPos = motorcycleEntity.isMounted
+        ? motorcycleEntity.interpolatedPosition
+        : playerEntity.interpolatedPosition;
+      const r1 = (n: number) => Number(n.toFixed(2));
+      const pArr: [number, number, number] = [r1(pPos.x), r1(pPos.y), r1(pPos.z)];
+      const cArr: [number, number, number] = [
+        r1(camera.position.x),
+        r1(camera.position.y),
+        r1(camera.position.z),
+      ];
+      const colliderObj = {
+        type: 'box',
+        pos: [pArr[0], r1(Math.max(0.5, pArr[1] - 0.35)), pArr[2]],
+        rot: [0, 0, 0],
+        scale: [2.2, 1.0, 2.2],
+        visible: true,
+        color: '#94a3b8',
+      };
+      return {
+        playerPos: pArr,
+        camPos: cArr,
+        colliderJson: JSON.stringify(colliderObj, null, 2),
+      };
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       audioManager.unlock();
       const tag = (e.target as HTMLElement | null)?.tagName;
-      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON';
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT';
       if (inInput) return;
       keys[e.code] = true;
       if (e.code === 'Space') {
@@ -4103,34 +4113,18 @@ export const ThirdPersonViewport = forwardRef<
           }
         }
       }
-      if (e.code === 'KeyV' && !e.repeat) {
-        cycleView();
-      }
-      if (e.code === 'KeyC' && !e.repeat) {
-        toggleFreeCam();
-      }
+      if (e.code === 'KeyV' && !e.repeat) cycleView();
+      if (e.code === 'KeyC' && !e.repeat) toggleFreeCam();
       if (e.code === 'F2' && !e.repeat) {
         e.preventDefault();
         toggleCameraMode();
       }
-      if (e.code === 'KeyP' && !e.repeat) {
-        togglePause();
-      }
-      if (e.code === 'KeyL' && !e.repeat) {
-        toggleSlowMotion();
-      }
-      if (e.code === 'KeyF' && !e.repeat) {
-        toggleWave();
-      }
-      if (e.code === 'KeyE' && !e.repeat) {
-        interact();
-      }
-      if (e.code === 'KeyG' && !e.repeat) {
-        quickSave();
-      }
-      if (e.code === 'KeyK' && !e.repeat) {
-        quickLoad();
-      }
+      if (e.code === 'KeyP' && !e.repeat) togglePause();
+      if (e.code === 'KeyL' && !e.repeat) toggleSlowMotion();
+      if (e.code === 'KeyF' && !e.repeat) toggleWave();
+      if (e.code === 'KeyE' && !e.repeat) interact();
+      if (e.code === 'KeyG' && !e.repeat) quickSave();
+      if (e.code === 'KeyK' && !e.repeat) quickLoad();
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       keys[e.code] = false;
@@ -4146,8 +4140,9 @@ export const ThirdPersonViewport = forwardRef<
     };
     const handlePointerMove = (e: PointerEvent) => {
       if (!isDraggingCamera || e.pointerId !== cameraPointerId) return;
-      const dx = e.clientX - lastPointerX;
-      const dy = e.clientY - lastPointerY;
+      const sens = cameraSensitivityRef.current;
+      const dx = (e.clientX - lastPointerX) * sens;
+      const dy = (e.clientY - lastPointerY) * sens;
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
       if (isFreeCam) {
@@ -4186,9 +4181,7 @@ export const ThirdPersonViewport = forwardRef<
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      renderer.setPixelRatio(
-        isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
-      );
+      applyQualityPreset(qualityPreset);
     };
 
     const handleContextLost = (e: Event) => {
@@ -4205,15 +4198,10 @@ export const ThirdPersonViewport = forwardRef<
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
-    renderer.domElement.addEventListener('wheel', handleWheel, {
-      passive: false,
-    });
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('resize', handleResize);
     renderer.domElement.addEventListener('webglcontextlost', handleContextLost);
-    renderer.domElement.addEventListener(
-      'webglcontextrestored',
-      handleContextRestored
-    );
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored);
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -4240,14 +4228,11 @@ export const ThirdPersonViewport = forwardRef<
     }
 
     const clock = new THREE.Clock();
-    const allInteractTargets: THREE.Object3D[] = [
-      ...doorEntity.interactTargets,
-      ...motorcycleEntity.interactTargets,
-    ];
     let fpsFrames = 0;
     let fpsAccum = 0;
     let reportedFps = 60;
     let reportedDrawCalls = 0;
+    let reportedTriangles = 0;
 
     function tick() {
       if (disposed) return;
@@ -4263,7 +4248,6 @@ export const ThirdPersonViewport = forwardRef<
       }
       if (boostCooldown > 0) boostCooldown = Math.max(0, boostCooldown - rawDt);
 
-      // 1. Leer inputs PC + Joystick móvil
       let rawX =
         (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) -
         (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
@@ -4336,12 +4320,22 @@ export const ThirdPersonViewport = forwardRef<
         }
       }
 
-      // 2. Paso de físicas con dt acotado y maxSubSteps controlado (3)
       if (scaledDt > 0) {
         world.step(PHYSICS_CONFIG.fixedTimeStep, scaledDt, 3);
       }
 
-      // Sincroniza ángulo de dirección y triggers de zona
+      // Sincronizar objetos dinámicos del mapa JSON
+      for (let i = 0; i < mapDynamicObjects.length; i++) {
+        const dyn = mapDynamicObjects[i];
+        dyn.mesh.position.set(dyn.body.position.x, dyn.body.position.y, dyn.body.position.z);
+        dyn.mesh.quaternion.set(
+          dyn.body.quaternion.x,
+          dyn.body.quaternion.y,
+          dyn.body.quaternion.z,
+          dyn.body.quaternion.w
+        );
+      }
+
       playerEntity.setMountedSteer(motorcycleEntity.smoothSteerAngle);
       const alpha = THREE.MathUtils.clamp(
         world.accumulator / PHYSICS_CONFIG.fixedTimeStep,
@@ -4360,7 +4354,6 @@ export const ThirdPersonViewport = forwardRef<
         );
       }
 
-      // 4. Audio continuo del motor de la moto
       const speedRatio = THREE.MathUtils.clamp(
         Math.abs(motorcycleEntity.currentForwardSpeed) / VEHICLE_CONFIG.maxForwardSpeed,
         0,
@@ -4374,7 +4367,6 @@ export const ThirdPersonViewport = forwardRef<
         driveState.throttle
       );
 
-      // 5. Luz direccional siguiendo al jugador/vehículo (o cámara libre)
       const focusPos = motorcycleEntity.isMounted
         ? motorcycleEntity.interpolatedPosition
         : playerEntity.interpolatedPosition;
@@ -4388,7 +4380,6 @@ export const ThirdPersonViewport = forwardRef<
       );
       dirLight.target.position.set(focusPos.x, focusBaseY, focusPos.z);
 
-      // 6. Cámara (Free-Cam de inspección / FPS / TPS) + Camera Shake
       const activePreset = CAMERA_VIEWS[currentViewIndex];
       const realHorizSpeed = motorcycleEntity.isMounted
         ? Math.abs(motorcycleEntity.currentForwardSpeed)
@@ -4398,11 +4389,13 @@ export const ThirdPersonViewport = forwardRef<
         const flySpeed =
           freeCamSpeed * (keys['ShiftLeft'] || keys['ShiftRight'] ? 2.1 : 1.0);
         const cosPitch = Math.cos(freeCamPitch);
-        _freeCamDir.set(
-          -Math.sin(freeCamYaw) * cosPitch,
-          Math.sin(freeCamPitch),
-          -Math.cos(freeCamYaw) * cosPitch
-        ).normalize();
+        _freeCamDir
+          .set(
+            -Math.sin(freeCamYaw) * cosPitch,
+            Math.sin(freeCamPitch),
+            -Math.cos(freeCamYaw) * cosPitch
+          )
+          .normalize();
         _freeCamRight.set(Math.cos(freeCamYaw), 0, -Math.sin(freeCamYaw));
         const vertInput =
           (keys['Space'] ? 1 : 0) -
@@ -4533,9 +4526,7 @@ export const ThirdPersonViewport = forwardRef<
             const hits = camRaycaster.intersectObjects(cameraColliders, false);
             if (hits.length > 0) {
               const safeDist = Math.max(0.8, hits[0].distance - 0.35);
-              _desiredCamPos
-                .copy(_lookTarget)
-                .addScaledVector(_rayDir, safeDist);
+              _desiredCamPos.copy(_lookTarget).addScaledVector(_rayDir, safeDist);
             }
           }
           _desiredCamPos.y = Math.max(0.38, _desiredCamPos.y);
@@ -4549,9 +4540,7 @@ export const ThirdPersonViewport = forwardRef<
 
         _shakeOffset.set(0, 0, 0);
         if (shakeTimer > 0) {
-          if (!timeManager.isPaused) {
-            shakeTimer = Math.max(0, shakeTimer - rawDt);
-          }
+          if (!timeManager.isPaused) shakeTimer = Math.max(0, shakeTimer - rawDt);
           const decay = shakeDuration > 0 ? shakeTimer / shakeDuration : 0;
           const mag = shakeIntensity * decay;
           _shakeOffset.set(
@@ -4559,21 +4548,21 @@ export const ThirdPersonViewport = forwardRef<
             (Math.random() * 2 - 1) * mag * 0.85,
             (Math.random() * 2 - 1) * mag
           );
-          if (shakeTimer === 0) {
-            shakeIntensity = 0;
-          }
+          if (shakeTimer === 0) shakeIntensity = 0;
         }
 
         camera.position.copy(currentCamPos).add(_shakeOffset);
         camera.lookAt(currentLookAt);
       }
 
-      // 7. EngineRaycaster unificado usando hitboxes ligeras (cero raycast high-poly)
+      // EngineRaycaster unificado
       if (isFreeCam || playerEntity.isRagdoll) {
         interactTargetType = null;
+        interactTargetDoor = null;
         interactPrompt = null;
       } else if (motorcycleEntity.isMounted) {
         interactTargetType = 'dismount';
+        interactTargetDoor = null;
         interactPrompt = 'Presiona E para bajar de la moto';
       } else {
         _playerRayOrigin.set(
@@ -4592,24 +4581,29 @@ export const ThirdPersonViewport = forwardRef<
           const distToPlayer = hit.point.distanceTo(_playerRayOrigin);
           if (hitType === 'motorcycle' && distToPlayer <= VEHICLE_CONFIG.interactDistance) {
             interactTargetType = 'motorcycle';
+            interactTargetDoor = null;
             interactPrompt = 'Presiona E para subir a la moto';
           } else if (hitType === 'door' && distToPlayer <= DOOR_CONFIG.interactDistance) {
             interactTargetType = 'door';
-            interactPrompt = doorEntity.doorOpen
+            interactTargetDoor = (hit.object.userData.doorEntity as DoorEntity | undefined) ?? mapDoors[0] ?? null;
+            interactPrompt = interactTargetDoor?.doorOpen
               ? 'Presiona E para cerrar la puerta'
               : 'Presiona E para abrir la puerta';
           } else {
             interactTargetType = null;
+            interactTargetDoor = null;
             interactPrompt = null;
           }
         } else {
           interactTargetType = null;
+          interactTargetDoor = null;
           interactPrompt = null;
         }
       }
 
       renderer.render(scene, camera);
       reportedDrawCalls = renderer.info.render.calls;
+      reportedTriangles = renderer.info.render.triangles;
 
       const speedKmh = Math.round(Math.abs(motorcycleEntity.currentForwardSpeed) * 3.6);
       const viewLabel = isFreeCam
@@ -4617,8 +4611,18 @@ export const ThirdPersonViewport = forwardRef<
         : cameraMode === 'FPS'
         ? 'Primera Persona'
         : activePreset.label;
-      const partsCount = motorcycleEntity.detectedParts.length;
-      const stateKey = `${playerEntity.reportedAnim}|${playerEntity.isGrounded}|${viewLabel}|${cameraMode}|${isFreeCam}|${timeManager.timeScale}|${playerEntity.health}|${playerEntity.isWaving}|${motorcycleEntity.isMounted}|${speedKmh}|${interactTargetType}|${doorEntity.doorOpen}|${partsCount}|${reportedFps}|${reportedDrawCalls}|${lastTriggerLabel}|${saveStatus}|${testModelStatus}`;
+      const anyDoorOpen = mapDoors.some((d) => d.doorOpen);
+      const px = Number(focusPos.x.toFixed(1));
+      const py = Number(focusPos.y.toFixed(1));
+      const pz = Number(focusPos.z.toFixed(1));
+      const cx = Number(camera.position.x.toFixed(1));
+      const cy = Number(camera.position.y.toFixed(1));
+      const cz = Number(camera.position.z.toFixed(1));
+      const optKey = motorcycleEntity.optStats
+        ? `${motorcycleEntity.optStats.beforeMeshes}-${motorcycleEntity.optStats.afterDrawCalls}`
+        : '0';
+
+      const stateKey = `${playerEntity.reportedAnim}|${playerEntity.isGrounded}|${viewLabel}|${cameraMode}|${isFreeCam}|${timeManager.timeScale}|${playerEntity.health}|${playerEntity.isWaving}|${motorcycleEntity.isMounted}|${speedKmh}|${interactTargetType}|${anyDoorOpen}|${motorcycleEntity.detectedParts.length}|${reportedFps}|${reportedDrawCalls}|${reportedTriangles}|${optKey}|${modelCacheStatus}|${qualityPreset}|${activeMapName}|${px},${py},${pz}|${cx},${cy},${cz}|${lastTriggerLabel}|${saveStatus}|${testModelStatus}`;
       if (stateKey !== lastReportedKey) {
         lastReportedKey = stateKey;
         onStateChangeRef.current({
@@ -4634,10 +4638,17 @@ export const ThirdPersonViewport = forwardRef<
           vehicleSpeedKmh: speedKmh,
           interactPrompt,
           interactType: interactTargetType,
-          doorOpen: doorEntity.doorOpen,
+          doorOpen: anyDoorOpen,
           hondaParts: motorcycleEntity.detectedParts,
           fps: reportedFps,
           drawCalls: reportedDrawCalls,
+          triangles: reportedTriangles,
+          hondaOptStats: motorcycleEntity.optStats,
+          modelCacheStatus,
+          qualityPreset,
+          activeMapName,
+          playerXYZ: [px, py, pz],
+          camXYZ: [cx, cy, cz],
           lastTrigger: lastTriggerLabel,
           saveStatus,
           testModelStatus,
@@ -4670,20 +4681,16 @@ export const ThirdPersonViewport = forwardRef<
       window.removeEventListener('pointercancel', handlePointerUp);
       renderer.domElement.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', handleResize);
-      renderer.domElement.removeEventListener(
-        'webglcontextlost',
-        handleContextLost
-      );
-      renderer.domElement.removeEventListener(
-        'webglcontextrestored',
-        handleContextRestored
-      );
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
 
+      clearCurrentMap();
       clearTestModel();
       audioManager.dispose();
+      audioManagerRef.current = null;
       entityManager.clear();
-      disposableGeometries.forEach((g) => g.dispose());
-      disposableMaterials.forEach((m) => m.dispose());
+      sharedCoreGeometries.forEach((g) => g.dispose());
+      sharedCoreMaterials.forEach((m) => m.dispose());
       envTexture.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {

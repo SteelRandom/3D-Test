@@ -11,6 +11,7 @@ export interface SoundPlayOptions {
  */
 export class AudioManager {
   public muted = false;
+  public masterVolume = 0.8;
 
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -25,6 +26,16 @@ export class AudioManager {
   private simulatedRpm = 1100;
   private engineActive = false;
 
+  public setMasterVolume(volume: number): void {
+    const clamped = Math.max(0, Math.min(1, volume));
+    this.masterVolume = clamped;
+    this.muted = clamped <= 0.001;
+    if (this.ctx && this.masterGain) {
+      const target = this.muted ? 0.0001 : clamped * 0.85;
+      this.masterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.04);
+    }
+  }
+
   private ensureContext(): AudioContext | null {
     if (this.muted || typeof window === 'undefined') return null;
     if (!this.ctx) {
@@ -35,7 +46,7 @@ export class AudioManager {
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.78;
+      this.masterGain.gain.value = this.masterVolume * 0.85;
       this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {

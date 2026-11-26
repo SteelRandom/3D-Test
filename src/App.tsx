@@ -3,15 +3,22 @@ import {
   Box,
   Bug,
   Camera,
+  Check,
   ChevronDown,
   ChevronUp,
   Code2,
   Compass,
+  Copy,
+  Database,
   Download,
   Eye,
+  FileJson,
   FolderOpen,
   Gauge,
   Hand,
+  Layers,
+  Map as MapIcon,
+  Menu,
   Pause,
   Play,
   RotateCcw,
@@ -23,16 +30,87 @@ import {
   CameraMode,
   CharacterAnimState,
   InteractTargetType,
+  QualityPreset,
   ThirdPersonViewport,
   ThirdPersonViewportHandle,
+  ViewportStateSnapshot,
 } from './components/ThirdPersonViewport';
 import { MobileControls } from './components/MobileControls';
 import { CodeModal } from './components/CodeModal';
+import {
+  JsonEditorModal,
+  MainMenu,
+  PauseMenuModal,
+  SettingsModal,
+} from './components/MainMenu';
 import { generateStandaloneHtml } from './scene/standaloneHtml';
+import { generateStandaloneMenuHtml } from './scene/standaloneMenuHtml';
 import { CAMERA_VIEWS } from './scene/courseConfig';
+import { HondaOptStats } from './engine/hondaOptimizer';
+import {
+  BUILTIN_MAP_LIST,
+  BUILTIN_MAPS,
+  MAP_FILENAMES,
+  MapJSON,
+  normalizeMapJSON,
+  NormalizedMapJSON,
+} from './engine/levelData';
+import {
+  CUSTOM_MAPS_STORAGE_KEY,
+  EngineSettings,
+  loadEngineSettings,
+  saveEngineSettings,
+  SELECTED_MAP_STORAGE_KEY,
+} from './engine/settings';
+
+function loadSavedCustomMaps(): NormalizedMapJSON[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_MAPS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const result: NormalizedMapJSON[] = [];
+    for (const item of parsed) {
+      try {
+        result.push(normalizeMapJSON(item));
+      } catch {
+        // Ignora entradas corruptas
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+function triggerFileDownload(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export default function App() {
   const viewportRef = useRef<ThirdPersonViewportHandle | null>(null);
+
+  const [view, setView] = useState<'menu' | 'maps' | 'playing'>('menu');
+  const [settings, setSettings] = useState<EngineSettings>(() => loadEngineSettings());
+  const [customMaps, setCustomMaps] = useState<NormalizedMapJSON[]>(() =>
+    loadSavedCustomMaps()
+  );
+  const [activeMap, setActiveMap] = useState<NormalizedMapJSON>(() =>
+    normalizeMapJSON(BUILTIN_MAPS.barrio_urbana)
+  );
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [jsonEditorOpen, setJsonEditorOpen] = useState(false);
+  const [pauseMenuOpen, setPauseMenuOpen] = useState(false);
 
   const [loadPct, setLoadPct] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -55,6 +133,23 @@ export default function App() {
   const [freeCam, setFreeCam] = useState(false);
   const [fps, setFps] = useState(60);
   const [drawCalls, setDrawCalls] = useState(0);
+  const [triangles, setTriangles] = useState(0);
+  const [hondaOptStats, setHondaOptStats] = useState<HondaOptStats | null>(null);
+  const [modelCacheStatus, setModelCacheStatus] = useState('Cargando...');
+  const [qualityPreset, setQualityPreset] = useState<QualityPreset>(
+    () => loadEngineSettings().quality
+  );
+  const [activeMapName, setActiveMapName] = useState(
+    BUILTIN_MAPS.barrio_urbana.nombre ?? 'Barrio Urbano'
+  );
+  const [playerXYZ, setPlayerXYZ] = useState<[number, number, number]>([0, 0.9, 0]);
+  const [camXYZ, setCamXYZ] = useState<[number, number, number]>([0, 2.9, 4.2]);
+  const [copiedPos, setCopiedPos] = useState(false);
+  const [customMapOpen, setCustomMapOpen] = useState(false);
+  const [customMapJsonText, setCustomMapJsonText] = useState(() =>
+    JSON.stringify(BUILTIN_MAPS.parque_stunt, null, 2)
+  );
+  const [mapError, setMapError] = useState<string | null>(null);
   const [lastTrigger, setLastTrigger] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [testModelStatus, setTestModelStatus] = useState<string | null>(null);
@@ -66,6 +161,11 @@ export default function App() {
   const [showMobilePreview, setShowMobilePreview] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [codeModalOpen, setCodeModalOpen] = useState(false);
+
+  const allMaps = useMemo(
+    () => [...BUILTIN_MAP_LIST, ...customMaps],
+    [customMaps]
+  );
 
   useEffect(() => {
     const checkTouch = () => {
@@ -83,18 +183,111 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === 'h' && !codeModalOpen) {
-        const tag = (e.target as HTMLElement | null)?.tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-          setDebugOpen((prev) => !prev);
-        }
+      if (view !== 'playing') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key.toLowerCase() === 'h' && !codeModalOpen && !settingsOpen && !jsonEditorOpen) {
+        setDebugOpen((prev) => !prev);
+      } else if (
+        e.key === 'Escape' &&
+        !codeModalOpen &&
+        !settingsOpen &&
+        !jsonEditorOpen
+      ) {
+        setPauseMenuOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [codeModalOpen]);
+  }, [view, codeModalOpen, settingsOpen, jsonEditorOpen]);
 
   const standaloneHtml = useMemo(() => generateStandaloneHtml(), []);
+  const standaloneMenuHtml = useMemo(() => generateStandaloneMenuHtml(), []);
+
+  const persistCustomMaps = useCallback((nextMaps: NormalizedMapJSON[]) => {
+    setCustomMaps(nextMaps);
+    try {
+      window.localStorage.setItem(
+        CUSTOM_MAPS_STORAGE_KEY,
+        JSON.stringify(nextMaps)
+      );
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const handleUpdateSettings = useCallback(
+    (next: EngineSettings) => {
+      setSettings(next);
+      saveEngineSettings(next);
+      setQualityPreset(next.quality);
+      if (view === 'playing') {
+        viewportRef.current?.setQualityPreset(next.quality);
+      }
+    },
+    [view]
+  );
+
+  const handleImportCustomMap = useCallback(
+    (
+      rawJson: unknown
+    ): { ok: boolean; map?: NormalizedMapJSON; error?: string } => {
+      try {
+        const normalized = normalizeMapJSON(rawJson);
+        const builtinIds = new Set(BUILTIN_MAP_LIST.map((m) => m.id));
+        const finalMap: NormalizedMapJSON = builtinIds.has(normalized.id)
+          ? {
+              ...normalized,
+              id: `${normalized.id}_custom_${Date.now().toString(36)}`,
+            }
+          : normalized;
+        const filtered = customMaps.filter((m) => m.id !== finalMap.id);
+        persistCustomMaps([...filtered, finalMap]);
+        return { ok: true, map: finalMap };
+      } catch (err) {
+        return {
+          ok: false,
+          error: (err as Error).message || 'JSON de mapa no válido.',
+        };
+      }
+    },
+    [customMaps, persistCustomMaps]
+  );
+
+  const handleRemoveCustomMap = useCallback(
+    (id: string) => {
+      persistCustomMaps(customMaps.filter((m) => m.id !== id));
+    },
+    [customMaps, persistCustomMaps]
+  );
+
+  const handleLaunchMap = useCallback(
+    (map: MapJSON | NormalizedMapJSON) => {
+      const normalized = normalizeMapJSON(map);
+      setActiveMap(normalized);
+      setActiveMapName(normalized.nombre || normalized.name);
+      setMapError(null);
+      try {
+        window.localStorage.setItem(
+          SELECTED_MAP_STORAGE_KEY,
+          JSON.stringify(normalized)
+        );
+      } catch {
+        // noop
+      }
+      setSettingsOpen(false);
+      setJsonEditorOpen(false);
+      setPauseMenuOpen(false);
+      if (view === 'playing' && viewportRef.current) {
+        viewportRef.current.loadMapFromJSON(normalized);
+      } else {
+        setLoadPct(0);
+        setIsLoaded(false);
+        setView('playing');
+      }
+    },
+    [view]
+  );
 
   const handleLoadProgress = useCallback(
     (progress: number, loaded: boolean, error: string | null) => {
@@ -105,66 +298,140 @@ export default function App() {
     []
   );
 
-  const handleStateChange = useCallback(
-    (next: {
-      animState: CharacterAnimState;
-      grounded: boolean;
-      viewLabel: string;
-      cameraMode: CameraMode;
-      freeCam: boolean;
-      timeScale: number;
-      health: number;
-      isWaving: boolean;
-      isMounted: boolean;
-      vehicleSpeedKmh: number;
-      interactPrompt: string | null;
-      interactType: InteractTargetType;
-      doorOpen: boolean;
-      hondaParts: string[];
-      fps: number;
-      drawCalls: number;
-      lastTrigger: string | null;
-      saveStatus: string | null;
-      testModelStatus: string | null;
-    }) => {
-      setAnimState(next.animState);
-      setGrounded(next.grounded);
-      setViewLabel(next.viewLabel);
-      setCameraMode(next.cameraMode);
-      setFreeCam(next.freeCam);
-      setTimeScale(next.timeScale);
-      setHealth(next.health);
-      setIsWaving(next.isWaving);
-      setIsMounted(next.isMounted);
-      setVehicleSpeedKmh(next.vehicleSpeedKmh);
-      setInteractPrompt(next.interactPrompt);
-      setInteractType(next.interactType);
-      setDoorOpen(next.doorOpen);
-      setHondaParts(next.hondaParts);
-      setFps(next.fps);
-      setDrawCalls(next.drawCalls);
-      setLastTrigger(next.lastTrigger);
-      setSaveStatus(next.saveStatus);
-      setTestModelStatus(next.testModelStatus);
+  const handleStateChange = useCallback((next: ViewportStateSnapshot) => {
+    setAnimState(next.animState);
+    setGrounded(next.grounded);
+    setViewLabel(next.viewLabel);
+    setCameraMode(next.cameraMode);
+    setFreeCam(next.freeCam);
+    setTimeScale(next.timeScale);
+    setHealth(next.health);
+    setIsWaving(next.isWaving);
+    setIsMounted(next.isMounted);
+    setVehicleSpeedKmh(next.vehicleSpeedKmh);
+    setInteractPrompt(next.interactPrompt);
+    setInteractType(next.interactType);
+    setDoorOpen(next.doorOpen);
+    setHondaParts(next.hondaParts);
+    setFps(next.fps);
+    setDrawCalls(next.drawCalls);
+    setTriangles(next.triangles);
+    setHondaOptStats(next.hondaOptStats);
+    setModelCacheStatus(next.modelCacheStatus);
+    setQualityPreset(next.qualityPreset);
+    setActiveMapName(next.activeMapName);
+    setPlayerXYZ(next.playerXYZ);
+    setCamXYZ(next.camXYZ);
+    setLastTrigger(next.lastTrigger);
+    setSaveStatus(next.saveStatus);
+    setTestModelStatus(next.testModelStatus);
+  }, []);
+
+  const handleCopyPosition = useCallback(async () => {
+    const payload = viewportRef.current?.getPositionCopyPayload();
+    if (!payload) return;
+    try {
+      await navigator.clipboard.writeText(payload.colliderJson);
+      setCopiedPos(true);
+      window.setTimeout(() => setCopiedPos(false), 1600);
+    } catch {
+      setCopiedPos(false);
+    }
+  }, []);
+
+  const handleLoadBuiltinMap = useCallback(
+    (key: 'barrio_urbana' | 'parque_stunt' | 'circuito_offroad') => {
+      const target = BUILTIN_MAPS[key];
+      const res = viewportRef.current?.loadMapFromJSON(target);
+      if (res && !res.ok) {
+        setMapError(res.error ?? 'Error al cargar mapa');
+      } else {
+        setMapError(null);
+        setActiveMap(normalizeMapJSON(target));
+      }
     },
     []
   );
 
-  const handleDownloadHtml = useCallback(() => {
-    const blob = new Blob([standaloneHtml], {
-      type: 'text/html;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'personaje-tercera-persona.html';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleLoadCustomMap = useCallback(() => {
+    const res = viewportRef.current?.loadMapFromJSON(customMapJsonText);
+    if (res && !res.ok) {
+      setMapError(res.error ?? 'Error de sintaxis en el JSON');
+    } else {
+      setMapError(null);
+    }
+  }, [customMapJsonText]);
+
+  const handleDownloadMenuHtml = useCallback(() => {
+    triggerFileDownload(
+      'index.html',
+      standaloneMenuHtml,
+      'text/html;charset=utf-8'
+    );
+  }, [standaloneMenuHtml]);
+
+  const handleDownloadEngineHtml = useCallback(() => {
+    triggerFileDownload(
+      'engine.html',
+      standaloneHtml,
+      'text/html;charset=utf-8'
+    );
   }, [standaloneHtml]);
 
-  const touchControlsVisible = isTouchDevice || showMobilePreview;
+  const handleDownloadBuiltinMapsJson = useCallback(() => {
+    const entries = Object.entries(BUILTIN_MAPS);
+    entries.forEach(([key, mapData], idx) => {
+      const filename = MAP_FILENAMES[key] ?? `${key}.json`;
+      const jsonContent = JSON.stringify(mapData, null, 2);
+      window.setTimeout(() => {
+        triggerFileDownload(
+          filename,
+          jsonContent,
+          'application/json;charset=utf-8'
+        );
+      }, idx * 180);
+    });
+  }, []);
+
+  if (view !== 'playing') {
+    return (
+      <>
+        <MainMenu
+          screen={view}
+          maps={allMaps}
+          settings={settings}
+          onNavigate={setView}
+          onLaunchMap={handleLaunchMap}
+          onImportCustomMap={handleImportCustomMap}
+          onRemoveCustomMap={handleRemoveCustomMap}
+          onUpdateSettings={handleUpdateSettings}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenJsonEditor={() => setJsonEditorOpen(true)}
+        />
+        <SettingsModal
+          open={settingsOpen}
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onChange={handleUpdateSettings}
+        />
+        <JsonEditorModal
+          open={jsonEditorOpen}
+          onClose={() => setJsonEditorOpen(false)}
+          onLaunchJson={(normalized) => {
+            handleImportCustomMap(normalized);
+            handleLaunchMap(normalized);
+          }}
+        />
+      </>
+    );
+  }
+
+  const touchControlsVisible =
+    settings.controls === 'touch'
+      ? true
+      : settings.controls === 'pc'
+      ? showMobilePreview
+      : isTouchDevice || showMobilePreview;
   const isPaused = timeScale === 0;
   const isSlowMo = timeScale > 0 && timeScale < 1;
   const hasRayTarget = interactType === 'door' || interactType === 'motorcycle';
@@ -174,6 +441,10 @@ export default function App() {
       {/* Lienzo 3D aislado a pantalla completa */}
       <ThirdPersonViewport
         ref={viewportRef}
+        initialMap={activeMap}
+        initialQuality={settings.quality}
+        cameraSensitivity={settings.cameraSensitivity}
+        audioVolume={settings.audioVolume}
         onLoadProgress={handleLoadProgress}
         onStateChange={handleStateChange}
         onContextLostChange={setContextLost}
@@ -209,22 +480,33 @@ export default function App() {
         </div>
       )}
 
-      {/* Panel colapsable derecho DEBUG */}
+      {/* Botón discreto Menú + panel colapsable derecho DEBUG */}
       <aside className="fixed top-4 right-4 z-[25] flex flex-col items-end gap-2">
-        <button
-          type="button"
-          onClick={() => setDebugOpen((v) => !v)}
-          aria-expanded={debugOpen}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/15 bg-slate-950/90 px-3 py-1.5 text-xs font-semibold tracking-wider text-slate-100 shadow-lg transition-colors hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-blue-500"
-        >
-          <Bug className="h-3.5 w-3.5 text-sky-400" />
-          DEBUG
-          {debugOpen ? (
-            <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPauseMenuOpen(true)}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/15 bg-slate-950/90 px-3 py-1.5 text-xs font-semibold tracking-wide text-slate-100 shadow-lg transition-colors hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-blue-500"
+          >
+            <Menu className="h-3.5 w-3.5 text-slate-300" />
+            Menú
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDebugOpen((v) => !v)}
+            aria-expanded={debugOpen}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/15 bg-slate-950/90 px-3 py-1.5 text-xs font-semibold tracking-wider text-slate-100 shadow-lg transition-colors hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-blue-500"
+          >
+            <Bug className="h-3.5 w-3.5 text-sky-400" />
+            DEBUG
+            {debugOpen ? (
+              <ChevronUp className="h-3.5 w-3.5 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+            )}
+          </button>
+        </div>
 
         {debugOpen && (
           <div className="flex max-h-[calc(100vh-5rem)] w-72 flex-col gap-3 overflow-y-auto rounded-xl border border-white/15 bg-slate-950/92 p-3.5 text-xs text-slate-100 shadow-2xl">
@@ -279,7 +561,33 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <span className="text-slate-400">Rendimiento</span>
                 <span className="text-emerald-400">
-                  {fps} FPS · {drawCalls} draws
+                  {fps} FPS · {drawCalls} draws · {triangles.toLocaleString()} tris
+                </span>
+              </div>
+              {hondaOptStats && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Honda opt</span>
+                  <span className="truncate text-sky-300">
+                    {hondaOptStats.beforeMeshes}→{hondaOptStats.afterDrawCalls} draws ·{' '}
+                    {hondaOptStats.beforeTriangles.toLocaleString()}→
+                    {hondaOptStats.afterTriangles.toLocaleString()} tris
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Caché</span>
+                <span className="truncate text-teal-300">{modelCacheStatus}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Jugador XYZ</span>
+                <span className="text-slate-200">
+                  {playerXYZ[0]}, {playerXYZ[1]}, {playerXYZ[2]}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Cámara XYZ</span>
+                <span className="text-slate-300">
+                  {camXYZ[0]}, {camXYZ[1]}, {camXYZ[2]}
                 </span>
               </div>
               {lastTrigger && (
@@ -302,6 +610,144 @@ export default function App() {
               {loadNotice && (
                 <div className="pt-1 text-[11px] text-amber-400">
                   {loadNotice}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5 border-b border-white/10 pb-2">
+              <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                <span className="inline-flex items-center gap-1">
+                  <Layers className="h-3 w-3" />
+                  Calidad y Caché
+                </span>
+                <span className="text-[10px] font-normal normal-case text-slate-300">
+                  {qualityPreset === 'low' ? 'Bajo' : qualityPreset === 'high' ? 'Alto' : 'Medio'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {(['low', 'medium', 'high'] as const).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      viewportRef.current?.setQualityPreset(preset);
+                      handleUpdateSettings({ ...settings, quality: preset });
+                    }}
+                    aria-pressed={qualityPreset === preset}
+                    className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                      qualityPreset === preset
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                    }`}
+                  >
+                    {preset === 'low' ? 'Bajo' : preset === 'medium' ? 'Medio' : 'Alto'}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleCopyPosition}
+                  className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-slate-100 transition-colors hover:bg-slate-700"
+                >
+                  {copiedPos ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5 text-sky-400" />
+                  )}
+                  {copiedPos ? '¡Copiado!' : 'Copiar Posición / Collider JSON'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void viewportRef.current?.clearModelCache();
+                  }}
+                  className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-rose-200 transition-colors hover:bg-slate-700"
+                >
+                  <Database className="h-3.5 w-3.5 text-rose-400" />
+                  Limpiar Caché de Modelos
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border-b border-white/10 pb-2">
+              <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                <span className="inline-flex items-center gap-1">
+                  <MapIcon className="h-3 w-3" />
+                  Mapas JSON
+                </span>
+                <span className="max-w-32 truncate text-[10px] font-normal normal-case text-amber-300">
+                  {activeMapName}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleLoadBuiltinMap('barrio_urbana')}
+                  className={`cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors ${
+                    activeMapName === 'Barrio Urbano'
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  Urbano
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadBuiltinMap('parque_stunt')}
+                  className={`cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors ${
+                    activeMapName === 'Stunt Arena'
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  Stunt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadBuiltinMap('circuito_offroad')}
+                  className={`cursor-pointer rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors ${
+                    activeMapName === 'Terreno Irregular'
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  Offroad
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCustomMapOpen((v) => !v)}
+                className="flex w-full cursor-pointer items-center justify-between rounded bg-slate-900/90 px-2 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800"
+              >
+                <span>Mapa JSON personalizado</span>
+                {customMapOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </button>
+              {customMapOpen && (
+                <div className="space-y-1.5">
+                  <textarea
+                    rows={5}
+                    value={customMapJsonText}
+                    onChange={(e) => setCustomMapJsonText(e.target.value)}
+                    spellCheck={false}
+                    className="w-full rounded border border-white/15 bg-slate-900 p-1.5 font-mono text-[10px] text-slate-100 select-text focus:border-sky-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLoadCustomMap}
+                    className="w-full cursor-pointer rounded-md bg-sky-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-sky-500"
+                  >
+                    Cargar Mapa JSON
+                  </button>
+                  {mapError && (
+                    <p className="rounded bg-rose-950/70 px-2 py-1 text-[10px] text-rose-300">
+                      {mapError}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -449,19 +895,42 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setCodeModalOpen(true)}
-                className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 font-medium text-slate-100 transition-colors hover:bg-slate-700"
+                className="col-span-2 inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 font-medium text-slate-100 transition-colors hover:bg-slate-700"
               >
                 <Code2 className="h-3.5 w-3.5" />
-                Ver HTML
+                Ver HTML (engine.html)
               </button>
+            </div>
 
+            <div className="space-y-1.5 border-t border-white/10 pt-2">
+              <p className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+                Exportar Proyecto Modular
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleDownloadMenuHtml}
+                  className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5 text-[11px] font-medium text-slate-100 transition-colors hover:bg-slate-700"
+                >
+                  <Download className="h-3 w-3 text-sky-400" />
+                  index.html
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadEngineHtml}
+                  className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg bg-blue-600 px-2 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-blue-500"
+                >
+                  <Download className="h-3 w-3" />
+                  engine.html
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={handleDownloadHtml}
-                className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1.5 font-medium text-white transition-colors hover:bg-blue-500"
+                onClick={handleDownloadBuiltinMapsJson}
+                className="inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-slate-700"
               >
-                <Download className="h-3.5 w-3.5" />
-                HTML único
+                <FileJson className="h-3.5 w-3.5" />
+                Descargar 3 Mapas (.json)
               </button>
             </div>
 
@@ -563,7 +1032,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Controles táctiles móviles (ocultos automáticamente en PC salvo vista previa) */}
+      {/* Controles táctiles móviles */}
       <MobileControls
         visible={touchControlsVisible}
         isWaving={isWaving}
@@ -583,12 +1052,45 @@ export default function App() {
         }}
       />
 
-      {/* Modal para inspeccionar y copiar el archivo único HTML */}
+      {/* Menú de pausa en partida */}
+      <PauseMenuModal
+        open={pauseMenuOpen}
+        activeMapName={activeMapName}
+        onResume={() => setPauseMenuOpen(false)}
+        onReset={() => {
+          viewportRef.current?.resetPlayer();
+          setPauseMenuOpen(false);
+        }}
+        onOpenSettings={() => {
+          setPauseMenuOpen(false);
+          setSettingsOpen(true);
+        }}
+        onChangeMap={() => {
+          setPauseMenuOpen(false);
+          setDebugOpen(false);
+          setView('maps');
+        }}
+        onBackToMenu={() => {
+          setPauseMenuOpen(false);
+          setDebugOpen(false);
+          setView('menu');
+        }}
+      />
+
+      {/* Configuración accesible desde el menú en partida */}
+      <SettingsModal
+        open={settingsOpen}
+        settings={settings}
+        onClose={() => setSettingsOpen(false)}
+        onChange={handleUpdateSettings}
+      />
+
+      {/* Modal para inspeccionar y copiar engine.html */}
       <CodeModal
         open={codeModalOpen}
         htmlCode={standaloneHtml}
         onClose={() => setCodeModalOpen(false)}
-        onDownload={handleDownloadHtml}
+        onDownload={handleDownloadEngineHtml}
       />
     </main>
   );
